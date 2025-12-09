@@ -30,7 +30,6 @@ type Config struct {
 	Proxy            ProxyConfig            `yaml:"proxy"`
 	Auth             AuthConfig             `yaml:"auth"`
 	TUI              TUIConfig              `yaml:"tui"`                     // TUI configuration (DEPRECATED: TUI has been removed)
-	Web              WebConfig              `yaml:"web"`                     // Web interface configuration
 	GlobalTimeout    time.Duration          `yaml:"global_timeout"`          // Global timeout for non-streaming requests
 	Timezone         string                 `yaml:"timezone"`                // Global timezone setting for all components
 	Endpoints        []EndpointConfig       `yaml:"endpoints"`
@@ -189,12 +188,6 @@ type TUIConfig struct {
 	Enabled           bool          `yaml:"enabled"`             // DEPRECATED: TUI has been removed
 	UpdateInterval    time.Duration `yaml:"update_interval"`     // DEPRECATED: TUI has been removed
 	SavePriorityEdits bool          `yaml:"save_priority_edits"` // DEPRECATED: TUI has been removed
-}
-
-type WebConfig struct {
-	Enabled bool   `yaml:"enabled"` // Enable Web interface, default: false
-	Host    string `yaml:"host"`    // Web interface host, default: localhost
-	Port    int    `yaml:"port"`    // Web interface port, default: 8088
 }
 
 // TokenCountingConfig Token计数配置
@@ -437,16 +430,6 @@ func (c *Config) setDefaults() {
 	// UsageTracking.Enabled defaults to false (zero value) for backward compatibility
 
 	// TUI has been removed in v4.0 - no defaults needed
-
-	// Set Web defaults
-	if c.Web.Host == "" {
-		c.Web.Host = "localhost"
-	}
-	if c.Web.Port == 0 {
-		c.Web.Port = 8088
-	}
-	// Web enabled defaults to false if not explicitly set in YAML
-	// Note: We don't set a default here since the zero value (false) is what we want
 
 	// Set Token Counting defaults
 	if c.TokenCounting.EstimationRatio == 0 {
@@ -874,18 +857,6 @@ func (cw *ConfigWatcher) logConfigChanges(oldConfig, newConfig *Config) {
 		cw.logger.Info("🔐 鉴权状态变更",
 			"old_enabled", oldConfig.Auth.Enabled,
 			"new_enabled", newConfig.Auth.Enabled)
-	}
-
-	if oldConfig.Web.Enabled != newConfig.Web.Enabled {
-		cw.logger.Info("🌐 Web界面状态变更",
-			"old_enabled", oldConfig.Web.Enabled,
-			"new_enabled", newConfig.Web.Enabled)
-	}
-
-	if oldConfig.Web.Port != newConfig.Web.Port {
-		cw.logger.Info("🌐 Web界面端口变更",
-			"old_port", oldConfig.Web.Port,
-			"new_port", newConfig.Web.Port)
 	}
 
 	if oldConfig.RequestSuspend.Enabled != newConfig.RequestSuspend.Enabled {
