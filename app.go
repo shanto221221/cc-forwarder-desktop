@@ -749,6 +749,11 @@ func (a *App) setupConfigReload() {
 		// 更新配置引用
 		a.config = newCfg
 
+		// 停止旧的日志 Emitter，避免多个 Emitter 同时广播导致日志重复
+		if a.logEmitter != nil {
+			a.logEmitter.Stop()
+		}
+
 		// 更新日志
 		newLogger, newBroadcastHandler := setupLogger(newCfg.Logging)
 		slog.SetDefault(newLogger)

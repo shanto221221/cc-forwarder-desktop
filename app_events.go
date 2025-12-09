@@ -9,14 +9,13 @@ import (
 
 // 事件名称常量
 const (
-	EventSystemStatus    = "system:status"
-	EventEndpointUpdate  = "endpoint:update"
-	EventGroupUpdate     = "group:update"
-	EventUsageUpdate     = "usage:update"
-	EventRequestUpdate   = "request:update"
-	EventConfigReloaded  = "config:reloaded"
-	EventError           = "error"
-	EventNotification    = "notification"
+	EventSystemStatus   = "system:status"
+	EventEndpointUpdate = "endpoint:update"
+	EventGroupUpdate    = "group:update"
+	EventUsageUpdate    = "usage:update"
+	EventConfigReloaded = "config:reloaded"
+	EventError          = "error"
+	EventNotification   = "notification"
 )
 
 // emitSystemStatus 发送系统状态更新到前端

@@ -325,6 +325,11 @@ func (eb *eventBus) eventProcessor() {
 
 // 处理单个事件
 func (eb *eventBus) processEvent(event Event) {
+	// v5.0 优化：Wails 桌面应用不使用 SSE 广播，提前返回避免无用的过滤/限流操作
+	if eb.sseBroadcaster == nil {
+		return
+	}
+
 	// 更新处理统计
 	eb.updateStats(event, "processed")
 
@@ -347,12 +352,6 @@ func (eb *eventBus) processEvent(event Event) {
 			eb.logger.Debug("Event rate limited", "type", event.Type)
 			return
 		}
-	}
-
-	// 检查SSE广播器是否可用
-	if eb.sseBroadcaster == nil {
-		// SSE broadcaster 未设置（Wails桌面环境不需要）
-		return
 	}
 
 	if !eb.sseBroadcaster.IsEventManagerActive() {

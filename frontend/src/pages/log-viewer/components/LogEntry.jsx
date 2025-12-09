@@ -48,14 +48,17 @@ function LogEntry({ log, searchQuery }) {
         {highlightText(log.message)}
       </div>
 
-      {/* 附加属性 */}
+      {/* 附加属性 - 显示前3个，超长值截断 */}
       {log.attrs && Object.keys(log.attrs).length > 0 && (
-        <div className="text-slate-400 text-[10px] whitespace-nowrap flex-shrink-0">
-          {Object.entries(log.attrs).slice(0, 2).map(([key, value]) => (
+        <div className="text-slate-400 text-[10px] whitespace-nowrap flex-shrink-0 max-w-[400px] truncate">
+          {Object.entries(log.attrs).slice(0, 3).map(([key, value]) => (
             <span key={key} className="mr-2">
-              {key}={value}
+              {key}={String(value).length > 40 ? String(value).slice(0, 40) + '...' : value}
             </span>
           ))}
+          {Object.keys(log.attrs).length > 3 && (
+            <span className="text-slate-300">+{Object.keys(log.attrs).length - 3}</span>
+          )}
         </div>
       )}
     </div>

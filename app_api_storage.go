@@ -263,29 +263,8 @@ func (a *App) CreateEndpointRecord(input CreateEndpointInput) error {
 		a.logger.Info("✅ 端点已创建", "name", input.Name, "channel", input.Channel)
 	}
 
-	// v5.0: 创建成功后，将端点添加到内存并触发健康检测
-	if a.endpointManager != nil {
-		failoverEnabled := input.FailoverEnabled
-		endpointCfg := config.EndpointConfig{
-			Name:                input.Name,
-			URL:                 input.URL,
-			Channel:             input.Channel,
-			Priority:            input.Priority,
-			FailoverEnabled:     &failoverEnabled,
-			Token:               input.Token,
-			ApiKey:              input.ApiKey,
-			Timeout:             time.Duration(input.TimeoutSeconds) * time.Second,
-			Headers:             input.Headers,
-			SupportsCountTokens: input.SupportsCountTokens,
-		}
-
-		// AddEndpoint 会自动触发健康检测
-		if err := a.endpointManager.AddEndpoint(endpointCfg); err != nil {
-			a.logger.Warn("⚠️ 添加端点到内存失败", "name", input.Name, "error", err)
-		} else {
-			a.logger.Debug("✅ 端点已添加到内存并触发健康检测", "name", input.Name)
-		}
-	}
+	// v5.0: endpointService.CreateEndpoint 已经将端点添加到内存并触发健康检测
+	// 不需要再次调用 AddEndpoint，否则会导致 "端点已存在" 错误
 
 	// v5.0: 创建成功后，异步同步端点倍率到 UsageTracker
 	go a.syncEndpointMultipliersToTracker(context.Background())

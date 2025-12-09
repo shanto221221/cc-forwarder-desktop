@@ -64,6 +64,10 @@ export function useWailsLogs(options = {}) {
   // 启动日志流
   const startStreaming = useCallback(async () => {
     try {
+      // 先用 EventsOff 显式取消所有 log:batch 订阅，避免重复
+      EventsOff('log:batch');
+      unsubscribeRef.current = null;
+
       // 检查是否已经在流式传输
       const status = await GetLogStreamStatus();
       if (!status) {
@@ -97,11 +101,9 @@ export function useWailsLogs(options = {}) {
   // 停止日志流
   const stopStreaming = useCallback(async () => {
     try {
-      // 先取消订阅
-      if (unsubscribeRef.current) {
-        unsubscribeRef.current();
-        unsubscribeRef.current = null;
-      }
+      // 用 EventsOff 显式取消所有 log:batch 订阅
+      EventsOff('log:batch');
+      unsubscribeRef.current = null;
 
       // 再停止后端流（检查是否正在运行）
       const isRunning = await GetLogStreamStatus();

@@ -102,6 +102,7 @@ func TestRetryManager_ShouldRetry_NetworkError(t *testing.T) {
 func TestRetryManager_ShouldRetry_TimeoutError(t *testing.T) {
 	rm := createTestRetryManager()
 
+	// 响应超时不应重试（避免重复计费）
 	errorCtx := &handlers.ErrorContext{
 		RequestID:     "test-req-002",
 		EndpointName:  "test-endpoint",
@@ -111,9 +112,27 @@ func TestRetryManager_ShouldRetry_TimeoutError(t *testing.T) {
 		OriginalError: fmt.Errorf("context deadline exceeded"),
 	}
 
+	shouldRetry, _ := rm.ShouldRetry(errorCtx, 1)
+
+	assert.False(t, shouldRetry, "超时错误不应重试（避免重复计费）")
+}
+
+func TestRetryManager_ShouldRetry_ConnectionTimeout(t *testing.T) {
+	rm := createTestRetryManager()
+
+	// 连接超时可以重试（还没连上服务器）
+	errorCtx := &handlers.ErrorContext{
+		RequestID:     "test-req-002b",
+		EndpointName:  "test-endpoint",
+		GroupName:     "test-group",
+		AttemptCount:  1,
+		ErrorType:     handlers.ErrorTypeConnectionTimeout,
+		OriginalError: fmt.Errorf("dial tcp: connection timed out"),
+	}
+
 	shouldRetry, delay := rm.ShouldRetry(errorCtx, 1)
 
-	assert.True(t, shouldRetry, "超时错误应该可以重试")
+	assert.True(t, shouldRetry, "连接超时应该可以重试")
 	assert.Greater(t, delay, time.Duration(0), "重试延迟应该大于0")
 }
 
@@ -212,6 +231,7 @@ func TestRetryManager_ShouldRetry_RateLimitError(t *testing.T) {
 func TestRetryManager_ShouldRetry_StreamError(t *testing.T) {
 	rm := createTestRetryManager()
 
+	// 流处理错误不应重试（数据已部分发送，避免重复计费）
 	errorCtx := &handlers.ErrorContext{
 		RequestID:     "test-req-008",
 		EndpointName:  "test-endpoint",
@@ -221,15 +241,15 @@ func TestRetryManager_ShouldRetry_StreamError(t *testing.T) {
 		OriginalError: fmt.Errorf("stream parsing error"),
 	}
 
-	shouldRetry, delay := rm.ShouldRetry(errorCtx, 1)
+	shouldRetry, _ := rm.ShouldRetry(errorCtx, 1)
 
-	assert.True(t, shouldRetry, "流处理错误应该可以重试")
-	assert.Greater(t, delay, time.Duration(0), "重试延迟应该大于0")
+	assert.False(t, shouldRetry, "流处理错误不应重试（数据已部分发送）")
 }
 
 func TestRetryManager_ShouldRetry_UnknownError(t *testing.T) {
 	rm := createTestRetryManager()
 
+	// 未知错误不应重试（保守策略，避免重复计费）
 	errorCtx := &handlers.ErrorContext{
 		RequestID:     "test-req-009",
 		EndpointName:  "test-endpoint",
@@ -239,14 +259,8 @@ func TestRetryManager_ShouldRetry_UnknownError(t *testing.T) {
 		OriginalError: fmt.Errorf("unknown error"),
 	}
 
-	// 第一次尝试应该可以重试
 	shouldRetry, delay := rm.ShouldRetry(errorCtx, 1)
-	assert.True(t, shouldRetry, "未知错误第一次应该可以重试")
-	assert.Greater(t, delay, time.Duration(0), "重试延迟应该大于0")
-
-	// 第二次尝试也应该可以重试
-	shouldRetry, delay = rm.ShouldRetry(errorCtx, 2)
-	assert.False(t, shouldRetry, "未知错误第二次后不应该重试")
+	assert.False(t, shouldRetry, "未知错误不应重试（保守策略）")
 	assert.Equal(t, time.Duration(0), delay, "不重试时延迟应该为0")
 }
 

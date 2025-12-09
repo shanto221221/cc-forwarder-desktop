@@ -79,10 +79,10 @@ usage_tracking:
       archive_on_cleanup: true # 清理时归档  
   
   # 异步写入配置
-  buffer_size: 300                     # 事件缓冲区大小，默认: 1000
+  buffer_size: 1000                     # 事件缓冲区大小，默认: 1000
   batch_size: 15                        # 批量写入大小，默认: 100
   flush_interval: "5s"                  # 强制刷新间隔，默认: 30s
-  max_retry: 3                           # 写入失败最大重试次数，默认: 3
+  max_retry: 5                           # 写入失败最大重试次数，默认: 3
 
 # 代理配置 (可选)
 proxy:

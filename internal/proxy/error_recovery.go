@@ -632,6 +632,8 @@ func (et ErrorType) String() string {
 		return "解析"
 	case ErrorTypeClientCancel:
 		return "客户端取消"
+	case ErrorTypeNoHealthyEndpoints:
+		return "无健康端点"
 	default:
 		return "未知"
 	}

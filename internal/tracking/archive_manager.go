@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 )
@@ -160,6 +161,12 @@ func (am *ArchiveManager) startArchiver() {
 			return
 		}
 
+		// 提取请求 ID 列表
+		requestIDs := make([]string, len(batch))
+		for i, event := range batch {
+			requestIDs[i] = event.Request.RequestID
+		}
+
 		start := time.Now()
 		err := am.flushBatch(batch)
 		latency := time.Since(start)
@@ -180,11 +187,13 @@ func (am *ArchiveManager) startArchiver() {
 		if err != nil {
 			slog.Error("📦 批量归档失败",
 				"batch_size", len(batch),
+				"request_ids", strings.Join(requestIDs, ", "),
 				"error", err,
 				"latency", latency)
 		} else {
 			slog.Debug("📦 批量归档成功",
 				"batch_size", len(batch),
+				"request_ids", strings.Join(requestIDs, ", "),
 				"latency", latency)
 		}
 

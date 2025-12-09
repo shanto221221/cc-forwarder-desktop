@@ -553,6 +553,24 @@ func (m *Manager) SetOnHealthCheckComplete(fn func()) {
 	m.onHealthCheckComplete = fn
 }
 
+// refreshGroupActivation 刷新组激活状态
+// 当端点健康状态变化时调用，用于重新评估哪些组应该被激活
+// v5.0+: 解决新增端点后不会自动激活的问题
+func (m *Manager) refreshGroupActivation() {
+	m.endpointsMu.RLock()
+	snapshot := make([]*Endpoint, len(m.endpoints))
+	copy(snapshot, m.endpoints)
+	m.endpointsMu.RUnlock()
+
+	m.groupManager.UpdateGroups(snapshot)
+	slog.Debug("🔄 [组管理] 端点健康状态变化，已刷新组激活状态")
+
+	// 触发健康检查完成回调（通知前端更新）
+	if m.onHealthCheckComplete != nil {
+		go m.onHealthCheckComplete()
+	}
+}
+
 // notifyWebInterface 通过EventBus发布端点状态变化事件
 func (m *Manager) notifyWebInterface(endpoint *Endpoint) {
 	if m.eventBus == nil {
@@ -902,15 +920,16 @@ func (m *Manager) checkEndpointHealth(endpoint *Endpoint) {
 // updateEndpointStatus updates the health status of an endpoint
 func (m *Manager) updateEndpointStatus(endpoint *Endpoint, healthy bool, responseTime time.Duration) {
 	endpoint.mutex.Lock()
-	defer endpoint.mutex.Unlock()
 
 	endpoint.Status.LastCheck = time.Now()
 	endpoint.Status.ResponseTime = responseTime
 	endpoint.Status.NeverChecked = false // 标记为已检测
 
+	// 记录状态变化前的健康状态
+	wasUnhealthy := !endpoint.Status.Healthy
+
 	if healthy {
 		// Endpoint is healthy
-		wasUnhealthy := !endpoint.Status.Healthy
 		endpoint.Status.Healthy = true
 		endpoint.Status.ConsecutiveFails = 0
 
@@ -937,12 +956,16 @@ func (m *Manager) updateEndpointStatus(endpoint *Endpoint, healthy bool, respons
 		}
 	}
 
+	endpoint.mutex.Unlock()
+
 	// 通知Web界面端点状态变化
 	go m.notifyWebInterface(endpoint)
 
-	// v4.0: 组健康统计已禁用，前端不再需要
-	// 通知组健康统计变化
-	// go m.notifyGroupHealthStats(endpoint.Config.Group)
+	// v5.0+: 当端点从不健康变为健康时，重新评估组的激活状态
+	// 这对新增端点后立即激活特别重要
+	if healthy && wasUnhealthy {
+		go m.refreshGroupActivation()
+	}
 }
 
 // IsHealthy returns the health status of an endpoint

@@ -45,17 +45,23 @@ func (rm *RetryManager) ShouldRetry(errorCtx *handlers.ErrorContext, attempt int
 
 	// 基于错误类型判断
 	switch errorCtx.ErrorType {
-	case handlers.ErrorTypeNetwork, handlers.ErrorTypeTimeout, handlers.ErrorTypeServerError:
-		// 网络、超时、服务器错误通常可重试
+	case handlers.ErrorTypeNetwork, handlers.ErrorTypeConnectionTimeout, handlers.ErrorTypeServerError:
+		// 网络错误、连接超时、服务器错误可重试
 		return true, rm.calculateBackoff(attempt)
+	case handlers.ErrorTypeEOF, handlers.ErrorTypeResponseTimeout, handlers.ErrorTypeTimeout:
+		// EOF、响应超时不可重试（避免重复计费）
+		return false, 0
 	case handlers.ErrorTypeHTTP, handlers.ErrorTypeAuth, handlers.ErrorTypeClientCancel:
 		// HTTP错误（4xx）、认证错误、客户端取消不可重试
 		return false, 0
 	case handlers.ErrorTypeRateLimit:
 		// 限流错误可重试，但使用更长的延迟
 		return true, rm.calculateRateLimitBackoff(attempt)
-	case handlers.ErrorTypeStream, handlers.ErrorTypeParsing:
-		// 流处理错误和解析错误可重试
+	case handlers.ErrorTypeStream:
+		// 流处理错误不可重试（数据已部分发送）
+		return false, 0
+	case handlers.ErrorTypeParsing:
+		// 解析错误可重试
 		return true, rm.calculateBackoff(attempt)
 	case handlers.ErrorTypeNoHealthyEndpoints:
 		// 健康检查限制错误 - 特殊策略：允许至少一次实际转发尝试，忽略健康检查状态
@@ -64,10 +70,7 @@ func (rm *RetryManager) ShouldRetry(errorCtx *handlers.ErrorContext, attempt int
 		}
 		return false, 0 // 只允许一次尝试
 	default:
-		// 未知错误谨慎重试，最多重试2次
-		if attempt < 2 {
-			return true, rm.calculateBackoff(attempt)
-		}
+		// 未知错误不重试（保守策略）
 		return false, 0
 	}
 }
@@ -166,15 +169,14 @@ func (rm *RetryManager) ShouldRetryWithDecision(errorCtx *handlers.ErrorContext,
 		}
 	}
 
-	// 直接使用handlers.ErrorType类型
-	errorType := int(errorCtx.ErrorType)
-
 	// 🔧 [关键修复] 分离局部和全局计数语义
 	// localAttempt: 用于退避计算和端点内重试判断
 	// globalAttempt: 仅用于限流策略和全局挂起判断
 
-	switch errorType {
-	case 9: // ErrorTypeClientCancel - 客户端取消错误
+	// 使用 ErrorType 枚举进行类型安全的判断
+	switch errorCtx.ErrorType {
+	case handlers.ErrorTypeClientCancel:
+		// 客户端取消错误 - 立即停止，不重试
 		return handlers.RetryDecision{
 			RetrySameEndpoint: false,
 			SwitchEndpoint:    false,
@@ -183,7 +185,56 @@ func (rm *RetryManager) ShouldRetryWithDecision(errorCtx *handlers.ErrorContext,
 			Reason:           "客户端取消请求，立即停止",
 		}
 
-	case 1: // ErrorTypeNetwork - 网络错误
+	case handlers.ErrorTypeEOF:
+		// EOF 错误 - 连接中断，不重试（避免重复计费）
+		return handlers.RetryDecision{
+			RetrySameEndpoint: false,
+			SwitchEndpoint:    false,
+			SuspendRequest:    false,
+			FinalStatus:       "eof_interrupted",
+			Reason:           "EOF连接中断，不重试避免重复计费",
+		}
+
+	case handlers.ErrorTypeResponseTimeout:
+		// 响应超时 - 服务器可能已处理，不重试（避免重复计费）
+		return handlers.RetryDecision{
+			RetrySameEndpoint: false,
+			SwitchEndpoint:    false,
+			SuspendRequest:    false,
+			FinalStatus:       "timeout",
+			Reason:           "响应超时，不重试避免重复计费",
+		}
+
+	case handlers.ErrorTypeTimeout:
+		// 兼容旧代码的超时错误 - 按响应超时处理，不重试
+		return handlers.RetryDecision{
+			RetrySameEndpoint: false,
+			SwitchEndpoint:    false,
+			SuspendRequest:    false,
+			FinalStatus:       "timeout",
+			Reason:           "超时错误，不重试避免重复计费",
+		}
+
+	case handlers.ErrorTypeConnectionTimeout:
+		// 连接超时 - 还没连上服务器，可以安全重试
+		if localAttempt < rm.config.Retry.MaxAttempts {
+			return handlers.RetryDecision{
+				RetrySameEndpoint: true,
+				SwitchEndpoint:    false,
+				SuspendRequest:    false,
+				Delay:            rm.calculateBackoff(localAttempt),
+				Reason:           "连接超时，在同一端点重试",
+			}
+		}
+		// 达到最大重试次数，切换端点
+		return handlers.RetryDecision{
+			RetrySameEndpoint: false,
+			SwitchEndpoint:    true,
+			SuspendRequest:    false,
+			Reason:           "连接超时重试达到上限，切换端点",
+		}
+
+	case handlers.ErrorTypeNetwork:
 		// 网络错误：可以在同一端点重试，也可以切换端点
 		if localAttempt < rm.config.Retry.MaxAttempts {
 			return handlers.RetryDecision{
@@ -202,26 +253,7 @@ func (rm *RetryManager) ShouldRetryWithDecision(errorCtx *handlers.ErrorContext,
 			Reason:           "网络错误重试达到上限，切换端点",
 		}
 
-	case 2: // ErrorTypeTimeout - 超时错误
-		// 超时错误：先在同一端点重试，达到上限后切换端点
-		if localAttempt < rm.config.Retry.MaxAttempts {
-			return handlers.RetryDecision{
-				RetrySameEndpoint: true,  // 改为先重试同端点
-				SwitchEndpoint:    false,
-				SuspendRequest:    false,
-				Delay:            rm.calculateBackoff(localAttempt),
-				Reason:           "超时错误，在同一端点重试",
-			}
-		}
-		// 达到最大重试次数，切换端点
-		return handlers.RetryDecision{
-			RetrySameEndpoint: false,
-			SwitchEndpoint:    true,
-			SuspendRequest:    false,
-			Reason:           "超时错误重试达到上限，切换端点",
-		}
-
-	case 3: // ErrorTypeHTTP - HTTP错误
+	case handlers.ErrorTypeHTTP:
 		// HTTP错误：通常是4xx错误，不应重试
 		return handlers.RetryDecision{
 			RetrySameEndpoint: false,
@@ -231,7 +263,7 @@ func (rm *RetryManager) ShouldRetryWithDecision(errorCtx *handlers.ErrorContext,
 			Reason:           "HTTP错误，无需重试",
 		}
 
-	case 4: // ErrorTypeServerError - 服务器错误（5xx）
+	case handlers.ErrorTypeServerError:
 		// 🔧 [修复] 服务器错误：先在同一端点重试，达到上限后切换端点
 		// 恢复正确行为：同端点重试到MaxAttempts，然后切换
 		if localAttempt < rm.config.Retry.MaxAttempts {
@@ -251,17 +283,17 @@ func (rm *RetryManager) ShouldRetryWithDecision(errorCtx *handlers.ErrorContext,
 			Reason:           "服务器错误重试达到上限，切换端点",
 		}
 
-	case 5: // ErrorTypeStream - 流式处理错误
-		// 流式错误：响应已接收但解析失败，重试无意义，直接失败
+	case handlers.ErrorTypeStream:
+		// 流式错误：响应已接收但解析失败，不重试（数据已部分发送）
 		return handlers.RetryDecision{
 			RetrySameEndpoint: false,
 			SwitchEndpoint:    false,
 			SuspendRequest:    false,
 			FinalStatus:       "stream_error",
-			Reason:           "流式解析错误，无需重试",
+			Reason:           "流式处理错误，不重试避免重复计费",
 		}
 
-	case 6: // ErrorTypeAuth - 认证错误
+	case handlers.ErrorTypeAuth:
 		// 认证错误：通常不可重试，除非是临时的认证问题
 		return handlers.RetryDecision{
 			RetrySameEndpoint: false,
@@ -271,12 +303,12 @@ func (rm *RetryManager) ShouldRetryWithDecision(errorCtx *handlers.ErrorContext,
 			Reason:           "认证错误，无需重试",
 		}
 
-	case 7: // ErrorTypeRateLimit - 限流错误
+	case handlers.ErrorTypeRateLimit:
 		// 限流错误：先在同一端点重试，达到上限后切换端点
 		if localAttempt < rm.config.Retry.MaxAttempts {
 			delay := rm.calculateRateLimitBackoff(localAttempt)
 			return handlers.RetryDecision{
-				RetrySameEndpoint: true,  // 改为先重试同端点
+				RetrySameEndpoint: true,
 				SwitchEndpoint:    false,
 				SuspendRequest:    delay > 30*time.Second, // 如果延迟太长，考虑挂起
 				Delay:            delay,
@@ -286,12 +318,12 @@ func (rm *RetryManager) ShouldRetryWithDecision(errorCtx *handlers.ErrorContext,
 		// 达到最大重试次数，尝试切换端点或挂起
 		return handlers.RetryDecision{
 			RetrySameEndpoint: false,
-			SwitchEndpoint:    true, // 先尝试切换端点
+			SwitchEndpoint:    true,
 			SuspendRequest:    false,
 			Reason:           "限流错误重试达到上限，切换端点",
 		}
 
-	case 8: // ErrorTypeParsing - 解析错误
+	case handlers.ErrorTypeParsing:
 		// 解析错误：通常是响应格式问题，切换端点重试
 		return handlers.RetryDecision{
 			RetrySameEndpoint: false,
@@ -301,7 +333,7 @@ func (rm *RetryManager) ShouldRetryWithDecision(errorCtx *handlers.ErrorContext,
 			Reason:           "解析错误，切换端点重试",
 		}
 
-	case 10: // ErrorTypeNoHealthyEndpoints - 没有健康端点可用
+	case handlers.ErrorTypeNoHealthyEndpoints:
 		// 健康检查限制错误：立即尝试所有活跃端点，不延迟
 		return handlers.RetryDecision{
 			RetrySameEndpoint: false,
@@ -311,23 +343,14 @@ func (rm *RetryManager) ShouldRetryWithDecision(errorCtx *handlers.ErrorContext,
 			Reason:           "健康检查限制，尝试所有活跃端点",
 		}
 
-	default: // ErrorTypeUnknown (0) 或其他未知错误
-		// 未知错误：保守策略，有限重试
-		if localAttempt < rm.config.Retry.MaxAttempts {
-			return handlers.RetryDecision{
-				RetrySameEndpoint: true,
-				SwitchEndpoint:    false,
-				SuspendRequest:    false,
-				Delay:            rm.calculateBackoff(localAttempt),
-				Reason:           "未知错误，保守重试",
-			}
-		}
+	default:
+		// 未知错误：保守策略，不重试
 		return handlers.RetryDecision{
 			RetrySameEndpoint: false,
-			SwitchEndpoint:    true, // 修复：未知错误达到重试上限时应切换到下一端点
+			SwitchEndpoint:    false,
 			SuspendRequest:    false,
-			Delay:            0,
-			Reason:           "未知错误重试达到上限，切换端点",
+			FinalStatus:       "error",
+			Reason:           "未知错误，保守策略不重试",
 		}
 	}
 }

@@ -13,7 +13,6 @@ const WAILS_EVENTS = {
   ENDPOINT_UPDATE: 'endpoint:update',
   GROUP_UPDATE: 'group:update',
   USAGE_UPDATE: 'usage:update',
-  REQUEST_UPDATE: 'request:update',
   CONFIG_RELOADED: 'config:reloaded',
   ERROR: 'error',
   NOTIFICATION: 'notification'
@@ -55,7 +54,6 @@ const useWailsEvents = (onDataUpdate, options = {}) => {
     'endpoint': WAILS_EVENTS.ENDPOINT_UPDATE,
     'group': WAILS_EVENTS.GROUP_UPDATE,
     'usage': WAILS_EVENTS.USAGE_UPDATE,
-    'request': WAILS_EVENTS.REQUEST_UPDATE,
     'config': WAILS_EVENTS.CONFIG_RELOADED,
     'error': WAILS_EVENTS.ERROR,
     'notification': WAILS_EVENTS.NOTIFICATION
