@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -19,16 +20,19 @@ type ErrorType int
 
 const (
 	ErrorTypeUnknown              ErrorType = iota
-	ErrorTypeNetwork                      // 网络错误
-	ErrorTypeTimeout                      // 超时错误
-	ErrorTypeHTTP                         // HTTP错误
-	ErrorTypeServerError                  // 服务器错误（5xx）
-	ErrorTypeStream                       // 流式处理错误
-	ErrorTypeAuth                         // 认证错误
-	ErrorTypeRateLimit                    // 限流错误
-	ErrorTypeParsing                      // 解析错误
-	ErrorTypeClientCancel                 // 客户端取消错误
-	ErrorTypeNoHealthyEndpoints           // 没有健康端点可用
+	ErrorTypeNetwork                        // 网络错误（连接失败等，可重试）
+	ErrorTypeEOF                            // EOF 错误（连接中断，不可重试，避免重复计费）
+	ErrorTypeConnectionTimeout              // 连接超时（可重试，未开始处理）
+	ErrorTypeResponseTimeout                // 响应超时（不可重试，可能已计费）
+	ErrorTypeTimeout                        // 超时错误（兼容旧代码，映射到响应超时）
+	ErrorTypeHTTP                           // HTTP错误
+	ErrorTypeServerError                    // 服务器错误（5xx）
+	ErrorTypeStream                         // 流式处理错误
+	ErrorTypeAuth                           // 认证错误
+	ErrorTypeRateLimit                      // 限流错误
+	ErrorTypeParsing                        // 解析错误
+	ErrorTypeClientCancel                   // 客户端取消错误
+	ErrorTypeNoHealthyEndpoints             // 没有健康端点可用
 )
 
 // ErrorContext 错误上下文信息
@@ -91,16 +95,34 @@ func (erm *ErrorRecoveryManager) ClassifyError(err error, requestID, endpoint, g
 		return errorCtx
 	}
 
-	// 其次检查超时错误（优先级高于网络错误）
-	if erm.isTimeoutError(err) {
-		errorCtx.ErrorType = ErrorTypeTimeout
-		errorCtx.RetryableAfter = erm.calculateBackoffDelay(attempt)
-		slog.Warn(fmt.Sprintf("⏰ [超时错误分类] [%s] 端点: %s, 尝试: %d, 错误: %v",
+	// 检查 EOF 错误（优先级高于网络错误，不可重试，避免重复计费）
+	if erm.isEOFError(err) {
+		errorCtx.ErrorType = ErrorTypeEOF
+		errorCtx.RetryableAfter = 0 // EOF 不可重试，可能已计费
+		slog.Warn(fmt.Sprintf("📛 [EOF错误分类] [%s] 端点: %s, 尝试: %d, 连接中断不重试避免重复计费, 错误: %v",
 			requestID, endpoint, attempt, err))
 		return errorCtx
 	}
 
-	// 网络错误分类（在超时错误之后检查）
+	// 检查连接超时（可重试，因为还没开始处理）
+	if erm.isConnectionTimeoutError(err) {
+		errorCtx.ErrorType = ErrorTypeConnectionTimeout
+		errorCtx.RetryableAfter = erm.calculateBackoffDelay(attempt)
+		slog.Warn(fmt.Sprintf("🔌 [连接超时分类] [%s] 端点: %s, 尝试: %d, 连接超时可重试, 错误: %v",
+			requestID, endpoint, attempt, err))
+		return errorCtx
+	}
+
+	// 检查响应/读取超时（不可重试，可能已计费）
+	if erm.isTimeoutError(err) {
+		errorCtx.ErrorType = ErrorTypeResponseTimeout
+		errorCtx.RetryableAfter = 0 // 响应超时不可重试，可能已计费
+		slog.Warn(fmt.Sprintf("⏰ [响应超时分类] [%s] 端点: %s, 尝试: %d, 响应超时不重试避免重复计费, 错误: %v",
+			requestID, endpoint, attempt, err))
+		return errorCtx
+	}
+
+	// 网络错误分类（连接失败等，可重试）
 	if erm.isNetworkError(err) {
 		errorCtx.ErrorType = ErrorTypeNetwork
 		errorCtx.RetryableAfter = erm.calculateBackoffDelay(attempt)
@@ -221,11 +243,38 @@ func (erm *ErrorRecoveryManager) ShouldRetry(errorCtx *ErrorContext) bool {
 		slog.Info(fmt.Sprintf("🚫 [重试判断] [%s] 客户端取消错误不可重试", errorCtx.RequestID))
 		return false
 
-	case ErrorTypeNetwork, ErrorTypeTimeout, ErrorTypeStream, ErrorTypeServerError:
-		// 网络、超时、流处理、服务器错误通常可重试
-		slog.Info(fmt.Sprintf("✅ [重试判断] [%s] %s错误可重试, 尝试: %d/%d",
-			errorCtx.RequestID, erm.getErrorTypeName(errorCtx.ErrorType), errorCtx.AttemptCount, errorCtx.MaxRetries))
+	case ErrorTypeEOF:
+		// EOF 错误不可重试，避免重复计费（连接已中断，服务器可能已处理）
+		slog.Info(fmt.Sprintf("📛 [重试判断] [%s] EOF错误不可重试，避免重复计费", errorCtx.RequestID))
+		return false
+
+	case ErrorTypeResponseTimeout, ErrorTypeTimeout:
+		// 响应超时不可重试，服务器可能还在处理，重试会导致重复计费
+		slog.Info(fmt.Sprintf("⏰ [重试判断] [%s] 响应超时不可重试，避免重复计费", errorCtx.RequestID))
+		return false
+
+	case ErrorTypeConnectionTimeout:
+		// 连接超时可重试，因为还没开始处理
+		slog.Info(fmt.Sprintf("🔌 [重试判断] [%s] 连接超时可重试, 尝试: %d/%d",
+			errorCtx.RequestID, errorCtx.AttemptCount, errorCtx.MaxRetries))
 		return true
+
+	case ErrorTypeNetwork:
+		// 网络错误（连接失败）可重试
+		slog.Info(fmt.Sprintf("🌐 [重试判断] [%s] 网络错误可重试, 尝试: %d/%d",
+			errorCtx.RequestID, errorCtx.AttemptCount, errorCtx.MaxRetries))
+		return true
+
+	case ErrorTypeServerError:
+		// 服务器错误（5xx）可重试，但要注意可能已计费
+		slog.Info(fmt.Sprintf("🚨 [重试判断] [%s] 服务器错误可重试, 尝试: %d/%d",
+			errorCtx.RequestID, errorCtx.AttemptCount, errorCtx.MaxRetries))
+		return true
+
+	case ErrorTypeStream:
+		// 流处理错误不可重试，数据已部分发送
+		slog.Info(fmt.Sprintf("🌊 [重试判断] [%s] 流处理错误不可重试，数据已部分发送", errorCtx.RequestID))
+		return false
 
 	case ErrorTypeHTTP:
 		// 非5xx HTTP错误通常不可重试
@@ -250,10 +299,10 @@ func (erm *ErrorRecoveryManager) ShouldRetry(errorCtx *ErrorContext) bool {
 		return true
 
 	default:
-		// 未知错误谨慎重试
-		slog.Info(fmt.Sprintf("⚠️ [重试判断] [%s] 未知错误谨慎重试, 尝试: %d/%d",
-			errorCtx.RequestID, errorCtx.AttemptCount, errorCtx.MaxRetries))
-		return errorCtx.AttemptCount < 2 // 未知错误最多重试2次
+		// 未知错误不重试，保守策略避免重复计费
+		slog.Info(fmt.Sprintf("⚠️ [重试判断] [%s] 未知错误不重试，保守策略",
+			errorCtx.RequestID))
+		return false
 	}
 }
 
@@ -298,14 +347,20 @@ func (erm *ErrorRecoveryManager) HandleFinalFailure(errorCtx *ErrorContext) {
 		switch errorCtx.ErrorType {
 		case ErrorTypeClientCancel:
 			status = "cancelled"
-		case ErrorTypeTimeout:
+		case ErrorTypeTimeout, ErrorTypeResponseTimeout:
 			status = "timeout"
+		case ErrorTypeConnectionTimeout:
+			status = "connection_timeout"
+		case ErrorTypeEOF:
+			status = "eof_interrupted"
 		case ErrorTypeAuth:
 			status = "auth_error"
 		case ErrorTypeRateLimit:
 			status = "rate_limited"
 		case ErrorTypeServerError:
 			status = "server_error"
+		case ErrorTypeStream:
+			status = "stream_error"
 		}
 
 		opts := tracking.UpdateOptions{
@@ -352,7 +407,7 @@ func (erm *ErrorRecoveryManager) RecoverFromPartialData(requestID string, partia
 	}
 }
 
-// isNetworkError 判断是否为网络错误（增强版本）
+// isNetworkError 判断是否为网络错误（连接失败等，不包括 EOF）
 func (erm *ErrorRecoveryManager) isNetworkError(err error) bool {
 	if err == nil {
 		return false
@@ -361,6 +416,10 @@ func (erm *ErrorRecoveryManager) isNetworkError(err error) bool {
 	// 检查网络操作错误
 	var netOpErr *net.OpError
 	if errors.As(err, &netOpErr) {
+		// 排除超时类型的 OpError
+		if netOpErr.Timeout() {
+			return false
+		}
 		return true
 	}
 
@@ -370,28 +429,84 @@ func (erm *ErrorRecoveryManager) isNetworkError(err error) bool {
 		return true
 	}
 
-	// 检查系统调用错误
+	// 检查系统调用错误（排除超时）
 	var syscallErr *syscall.Errno
 	if errors.As(err, &syscallErr) {
 		switch *syscallErr {
-		case syscall.ECONNREFUSED, syscall.ECONNRESET, syscall.ETIMEDOUT,
+		case syscall.ECONNREFUSED, syscall.ECONNRESET,
 			syscall.ENETUNREACH, syscall.EHOSTUNREACH:
 			return true
 		}
 	}
 
-	// 字符串匹配（现有逻辑，但排除超时相关错误）
+	// 字符串匹配（不包括 EOF 和超时）
 	errStr := strings.ToLower(err.Error())
 	networkErrors := []string{
 		"connection reset", "connection refused", "connection closed",
 		"network is unreachable", "no route to host", "broken pipe",
-		"eof", "unexpected eof",
-		"upstream connect", "connect error", // 补充常见的upstream错误
-		"stream reset", // 补充网络流重置错误
+		"upstream connect", "connect error",
+		"stream reset",
 	}
 
 	for _, netErr := range networkErrors {
 		if strings.Contains(errStr, netErr) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// isEOFError 判断是否为 EOF 错误（连接中断，不可重试）
+func (erm *ErrorRecoveryManager) isEOFError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	// 检查标准库 EOF 错误
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+		return true
+	}
+
+	// 字符串匹配
+	errStr := strings.ToLower(err.Error())
+	eofErrors := []string{
+		"eof", "unexpected eof",
+	}
+
+	for _, eofErr := range eofErrors {
+		if strings.Contains(errStr, eofErr) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// isConnectionTimeoutError 判断是否为连接超时（可重试，因为还没开始处理）
+func (erm *ErrorRecoveryManager) isConnectionTimeoutError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	errStr := strings.ToLower(err.Error())
+
+	// 连接超时的特征：dial timeout, connection timeout
+	connectionTimeoutErrors := []string{
+		"dial timeout", "dial tcp", "connection timed out",
+		"connect timeout", "dial i/o timeout",
+	}
+
+	for _, ctErr := range connectionTimeoutErrors {
+		if strings.Contains(errStr, ctErr) {
+			return true
+		}
+	}
+
+	// 检查 net.OpError 中的 dial 操作超时
+	var netOpErr *net.OpError
+	if errors.As(err, &netOpErr) {
+		if netOpErr.Op == "dial" && netOpErr.Timeout() {
 			return true
 		}
 	}
@@ -495,6 +610,12 @@ func (et ErrorType) String() string {
 	switch et {
 	case ErrorTypeNetwork:
 		return "网络"
+	case ErrorTypeEOF:
+		return "EOF中断"
+	case ErrorTypeConnectionTimeout:
+		return "连接超时"
+	case ErrorTypeResponseTimeout:
+		return "响应超时"
 	case ErrorTypeTimeout:
 		return "超时"
 	case ErrorTypeHTTP:

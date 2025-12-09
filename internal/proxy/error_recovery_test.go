@@ -42,15 +42,15 @@ func TestErrorRecoveryManager_ClassifyError(t *testing.T) {
 		{nil, ErrorTypeUnknown, "nil error", false},
 		{errors.New("connection reset"), ErrorTypeNetwork, "connection reset", true},
 		{errors.New("connection refused"), ErrorTypeNetwork, "connection refused", true},
-		{errors.New("i/o timeout"), ErrorTypeTimeout, "i/o timeout", true},
-		{errors.New("context deadline exceeded"), ErrorTypeTimeout, "deadline exceeded", true},
+		{errors.New("i/o timeout"), ErrorTypeResponseTimeout, "i/o timeout", false},               // 响应超时不可重试
+		{errors.New("context deadline exceeded"), ErrorTypeResponseTimeout, "deadline exceeded", false}, // 响应超时不可重试
 		{errors.New("HTTP 500 Internal Server Error"), ErrorTypeServerError, "HTTP 5xx error", true},
 		{errors.New("HTTP 400 Bad Request"), ErrorTypeRateLimit, "HTTP 400 error (now rate limit)", true},
 		{errors.New("HTTP 404 Not Found"), ErrorTypeHTTP, "HTTP 4xx error (non-400)", false},
 		{errors.New("unauthorized access"), ErrorTypeAuth, "auth error", false},
 		{errors.New("rate limit exceeded"), ErrorTypeRateLimit, "rate limit", true},
-		{errors.New("stream parsing error"), ErrorTypeStream, "stream error", true},
-		{errors.New("unknown issue"), ErrorTypeUnknown, "unknown error", true},
+		{errors.New("stream parsing error"), ErrorTypeStream, "stream error", false}, // 流处理错误不可重试
+		{errors.New("unknown issue"), ErrorTypeUnknown, "unknown error", false},      // 未知错误不重试（保守策略）
 	}
 
 	for _, tc := range testCases {
@@ -97,14 +97,17 @@ func TestErrorRecoveryManager_ShouldRetry(t *testing.T) {
 	}{
 		{ErrorTypeNetwork, 1, 3, true, "network error within retry limit"},
 		{ErrorTypeNetwork, 5, 3, false, "network error exceeds retry limit"},
-		{ErrorTypeTimeout, 2, 3, true, "timeout error within retry limit"},
+		{ErrorTypeConnectionTimeout, 2, 3, true, "connection timeout within retry limit"},
+		{ErrorTypeResponseTimeout, 1, 3, false, "response timeout not retryable"},
+		{ErrorTypeTimeout, 1, 3, false, "timeout error not retryable (maps to response timeout)"},
+		{ErrorTypeEOF, 1, 3, false, "EOF error not retryable"},
 		{ErrorTypeAuth, 1, 3, false, "auth error not retryable"},
 		{ErrorTypeHTTP, 1, 3, false, "general HTTP error not retryable"},
 		{ErrorTypeRateLimit, 2, 3, true, "rate limit retryable"},
-		{ErrorTypeStream, 1, 3, true, "stream error retryable"},
+		{ErrorTypeStream, 1, 3, false, "stream error not retryable (data already sent)"},
 		{ErrorTypeParsing, 1, 3, true, "parsing error retryable"},
-		{ErrorTypeUnknown, 1, 3, true, "unknown error retryable once"},
-		{ErrorTypeUnknown, 3, 3, false, "unknown error exceeds safe retry limit"},
+		{ErrorTypeUnknown, 1, 3, false, "unknown error not retryable (conservative)"},
+		{ErrorTypeServerError, 1, 3, true, "server error (5xx) retryable"},
 	}
 
 	for _, tc := range testCases {
@@ -162,12 +165,12 @@ func TestErrorRecoveryManager_IsNetworkError(t *testing.T) {
 		{errors.New("connection reset"), true},
 		{errors.New("connection refused"), true},
 		{errors.New("Connection REFUSED"), true}, // Case insensitive
-		{errors.New("i/o timeout"), false}, // This is a timeout error, not network
+		{errors.New("i/o timeout"), false},       // This is a timeout error, not network
 		{errors.New("network is unreachable"), true},
 		{errors.New("no route to host"), true},
 		{errors.New("broken pipe"), true},
-		{errors.New("eof"), true},
-		{errors.New("unexpected eof"), true},
+		{errors.New("eof"), false},          // EOF is now a separate error type, not network
+		{errors.New("unexpected eof"), false}, // EOF is now a separate error type, not network
 		{errors.New("random error"), false},
 		{&net.OpError{Op: "dial"}, true},
 		{&net.DNSError{}, true},
@@ -333,7 +336,7 @@ func TestErrorRecoveryManager_ClassifyError_SyscallErrors(t *testing.T) {
 	}{
 		{syscall.ECONNREFUSED, ErrorTypeNetwork},
 		{syscall.ECONNRESET, ErrorTypeNetwork},
-		{syscall.ETIMEDOUT, ErrorTypeTimeout}, // This is a timeout error
+		{syscall.ETIMEDOUT, ErrorTypeResponseTimeout}, // 系统超时归类为响应超时（不可重试）
 		{syscall.ENETUNREACH, ErrorTypeNetwork},
 		{syscall.EHOSTUNREACH, ErrorTypeNetwork},
 	}

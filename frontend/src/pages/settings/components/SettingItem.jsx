@@ -5,6 +5,7 @@
 
 import { useState, useEffect } from 'react';
 import { AlertTriangle } from 'lucide-react';
+import { CustomSelect } from '../../../components/ui';
 
 // 值类型到输入类型的映射
 const VALUE_TYPE_CONFIG = {
@@ -15,6 +16,12 @@ const VALUE_TYPE_CONFIG = {
   duration: { type: 'text', step: null, placeholder: '例如: 30s, 5m, 1h' },
   password: { type: 'password', step: null }
 };
+
+// 策略类型选项
+const STRATEGY_OPTIONS = [
+  { value: 'priority', label: 'priority (优先级)' },
+  { value: 'fastest', label: 'fastest (最快响应)' }
+];
 
 const SettingItem = ({
   setting,
@@ -95,6 +102,11 @@ const SettingItem = ({
 
   // 策略类型使用下拉选择
   if (setting.key === 'type' && setting.category === 'strategy') {
+    const handleStrategyChange = (newValue) => {
+      setLocalValue(newValue);
+      onChange(setting.category, setting.key, newValue);
+    };
+
     return (
       <div className="flex justify-between items-center py-3 border-b border-slate-100 last:border-0">
         <div className="flex-1 min-w-0 pr-4">
@@ -111,19 +123,13 @@ const SettingItem = ({
             <p className="text-xs text-slate-400 mt-0.5">{setting.description}</p>
           )}
         </div>
-        <select
+        <CustomSelect
+          options={STRATEGY_OPTIONS}
           value={localValue}
-          onChange={handleChange}
+          onChange={handleStrategyChange}
           disabled={disabled}
-          className={`
-            px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-600
-            focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500
-            ${disabled ? 'opacity-50 cursor-not-allowed' : ''}
-          `}
-        >
-          <option value="priority">priority (优先级)</option>
-          <option value="fastest">fastest (最快响应)</option>
-        </select>
+          size="md"
+        />
       </div>
     );
   }

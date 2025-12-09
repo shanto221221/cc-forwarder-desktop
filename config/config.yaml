@@ -1,0 +1,114 @@
+# Claude Request Forwarder Configuration
+# 完整配置示例，展示所有可用的配置选项
+
+# 全局时区配置 - 影响所有时间相关功能
+timezone: "Asia/Shanghai"      # 全局时区设置，默认: Asia/Shanghai
+                               # 其他有效值: "UTC", "America/New_York", "Europe/London" 等
+# 日志配置
+logging:
+  level: "debug"          # 日志级别: debug, info, warn, error，默认: info
+  format: "text"         # 日志格式: "json" 或 "text"，默认: text
+  
+  # 文件日志配置 (可选)
+  file_enabled: true            # 是否启用文件日志，默认: false
+  file_path: "logs/app.log"      # 日志文件路径，默认: logs/app.log
+  max_file_size: "50MB"         # 单个日志文件最大大小，支持: KB, MB, GB，默认: 100MB
+  max_files: 10                  # 最多保留的轮转文件数量，默认: 10
+  compress_rotated: true         # 是否压缩轮转的旧日志文件，默认: false
+  disable_response_limit: true   # 启用文件日志时是否取消响应内容输出限制，默认: false
+
+  # Token调试配置 - 用于调试Token解析失败问题
+  token_debug:
+    enabled: true                 # 是否启用Token调试功能，默认: false (生产环境建议关闭)
+    save_path: "logs"             # 调试文件保存目录，默认: logs
+    max_files: 0                 # 最大保留调试文件数量，默认: 50 (0=不限制)
+    auto_cleanup_days: 0          # 自动清理N天前的调试文件，默认: 7 (0=不清理)
+
+# 流式传输配置
+streaming:
+  heartbeat_interval: "30s"  # 心跳间隔，默认: 30s
+  read_timeout: "10s"         # 读取超时，默认: 1s
+  max_idle_time: "120s"      # 最大空闲时间，默认: 120s
+  # 响应头超时配置 (v3.5.1新增)
+  # 控制等待服务端首次响应头的最大时间
+  # 对于AI服务(如Claude API)建议设置较长时间，以应对排队和预处理
+  # 设置过短可能导致假超时和不必要的重试
+  # 推荐范围: 30s-120s，根据实际服务响应时间调整
+  response_header_timeout: "90s"
+
+# Token计数配置
+token_counting:
+  enabled: true              # 是否启用count_tokens端点支持，默认: false
+  estimation_ratio: 4.0
+
+endpoints_storage:
+    type: "sqlite"
+
+# 使用跟踪配置
+usage_tracking:
+  enabled: true                          # 是否启用使用跟踪，默认: false
+  # 数据库配置 - 新增功能
+  database:
+    # 数据库类型选择: "sqlite" | "mysql"
+    type: "sqlite"
+
+    # # sqlite配置（向后兼容，当type=sqlite时使用）
+    # database_path: "data/usage.db"
+
+    # # MySQL配置（当type=mysql时使用）
+    # host: "127.0.0.1"
+    # port: 3306
+    # database: "ccusage"
+    # username: "root"
+    # password: "root@123456"
+
+    # # 连接池配置（MySQL专用）
+    # max_open_conns: 10      # 最大打开连接数
+    # max_idle_conns: 5       # 最大空闲连接数
+    # conn_max_lifetime: "1h"  # 连接最大生命周期
+    # conn_max_idle_time: "10m" # 连接最大空闲时间
+
+    # # MySQL特定配置
+    # charset: "utf8mb4"           # 字符集
+    # timezone: "Asia/Shanghai"    # 时区设置
+  hot_pool:
+      enabled: true           # 是否启用热池模式
+      max_age: 30m            # 最大存活时间
+      max_size: 10000         # 最大容量
+      cleanup_interval: 10m    # 清理间隔
+      archive_on_cleanup: true # 清理时归档  
+  
+  # 异步写入配置
+  buffer_size: 300                     # 事件缓冲区大小，默认: 1000
+  batch_size: 15                        # 批量写入大小，默认: 100
+  flush_interval: "5s"                  # 强制刷新间隔，默认: 30s
+  max_retry: 3                           # 写入失败最大重试次数，默认: 3
+
+# 代理配置 (可选)
+proxy:
+  enabled: false              # 是否启用代理
+  type: "http"               # 代理类型: "http", "https", 或 "socks5"
+  
+  # 方式一: 完整代理 URL
+  # url: "http://proxy.example.com:8080"
+  # url: "https://proxy.example.com:8080"
+  # url: "socks5://proxy.example.com:1080"
+  
+  # 方式二: 分别指定主机和端口
+  host: "proxy.example.com"   # 代理主机
+  port: 8080                  # 代理端口
+  
+  # 可选的认证信息
+  # username: "proxy_user"    # 代理用户名
+  # password: "proxy_pass"    # 代理密码
+
+# 端点配置
+# ==================== 组密钥配置说明 ====================
+# 每个组的第一个端点应该定义该组使用的 token 和 api-key
+# 组内其他端点如果没有定义 token/api-key，会自动使用组内第一个端点的密钥
+# 如果某个端点需要使用不同的密钥，可以显式指定 token/api-key 来覆盖组默认值
+# ========================================================
+
+endpoints: []
+# ========== 临时注释全部端点配置 - 测试纯数据库加载 ==========
+# 原配置已备份，测试完成后恢复

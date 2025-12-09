@@ -49,9 +49,8 @@ data/
 # YAML files (exclude all yaml files except those in config directory)
 *.yaml
 
-# But include yaml files in config directory except config.yaml
+# Include yaml files in config directory
 !config/*.yaml
-config/config.yaml
 
 # Test files
 *_test_example.go
