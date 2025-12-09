@@ -33,12 +33,20 @@ func isDebugEnabled() bool {
 }
 
 // getDebugLogDir 获取调试日志目录
+// 如果配置的是相对路径，则使用应用数据目录下的日志目录
+// 如果配置的是绝对路径，则直接使用配置的路径
 func getDebugLogDir() string {
 	if debugConfig != nil && debugConfig.SavePath != "" {
-		return debugConfig.SavePath
+		// 检查是否为绝对路径
+		if filepath.IsAbs(debugConfig.SavePath) {
+			return debugConfig.SavePath
+		}
+		// 相对路径：使用应用数据目录下的日志目录
+		// macOS: ~/Library/Application Support/CC-Forwarder/logs
+		return GetLogDir()
 	}
-	// 默认目录（向后兼容）
-	return "logs"
+	// 默认：使用应用数据目录下的日志目录
+	return GetLogDir()
 }
 
 // WriteTokenDebugResponse 异步保存Token解析失败的响应数据用于调试
