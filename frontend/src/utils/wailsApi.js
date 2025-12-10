@@ -328,6 +328,7 @@ export const getGroups = async () => {
 
     return {
       name: g.name,
+      channel: g.channel,  // v5.0: 渠道名称
       is_active: g.active,
       paused: g.paused,
       priority: g.priority,

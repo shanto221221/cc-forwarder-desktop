@@ -441,6 +441,7 @@ export namespace main {
 	}
 	export class GroupInfo {
 	    name: string;
+	    channel: string;
 	    active: boolean;
 	    paused: boolean;
 	    priority: number;
@@ -455,6 +456,7 @@ export namespace main {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.name = source["name"];
+	        this.channel = source["channel"];
 	        this.active = source["active"];
 	        this.paused = source["paused"];
 	        this.priority = source["priority"];

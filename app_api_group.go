@@ -17,6 +17,7 @@ import (
 // GroupInfo 组信息
 type GroupInfo struct {
 	Name             string `json:"name"`
+	Channel          string `json:"channel"`           // v5.0: 渠道名称（从端点配置获取）
 	Active           bool   `json:"active"`
 	Paused           bool   `json:"paused"`
 	Priority         int    `json:"priority"`
@@ -43,8 +44,15 @@ func (a *App) GetGroups() []GroupInfo {
 	result := make([]GroupInfo, 0, len(groups))
 
 	for _, g := range groups {
+		// 从第一个端点获取渠道名称
+		channel := ""
+		if len(g.Endpoints) > 0 {
+			channel = g.Endpoints[0].Config.Channel
+		}
+
 		info := GroupInfo{
 			Name:          g.Name,
+			Channel:       channel,
 			Active:        g.IsActive,
 			Paused:        g.ManuallyPaused,
 			Priority:      g.Priority,

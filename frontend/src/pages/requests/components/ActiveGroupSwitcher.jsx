@@ -1,9 +1,9 @@
 // ============================================
 // ActiveGroupSwitcher - 端点快捷切换器
-// 2025-12-06 10:40:38 v4.0: 简化为仅端点切换（一个端点=一个组）
+// 2025-12-09 17:29:26 v5.0: 显示渠道名称，按优先级排序
 // ============================================
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { ArrowLeftRight, Server, Check, AlertCircle } from 'lucide-react';
 
 /**
@@ -23,6 +23,11 @@ const ActiveGroupSwitcher = ({
   const [isOpen, setIsOpen] = useState(false);
   const [switching, setSwitching] = useState(false);
   const containerRef = useRef(null);
+
+  // 按优先级排序（数值越小优先级越高）- Hook 必须在条件返回之前
+  const sortedGroups = useMemo(() => {
+    return [...groups].sort((a, b) => (a.priority ?? 999) - (b.priority ?? 999));
+  }, [groups]);
 
   // 点击外部关闭
   useEffect(() => {
@@ -102,7 +107,7 @@ const ActiveGroupSwitcher = ({
   }
 
   // 查找当前活跃端点
-  const activeEndpoint = groups.find(g => g.name === activeGroup) || groups[0];
+  const activeEndpoint = sortedGroups.find(g => g.name === activeGroup) || sortedGroups[0];
   const activeHealth = getHealthStyle(activeEndpoint);
 
   return (
@@ -141,13 +146,13 @@ const ActiveGroupSwitcher = ({
               选择端点
             </div>
             <div className="text-[10px] text-gray-400 mt-0.5">
-              共 {groups.length} 个端点
+              共 {sortedGroups.length} 个端点
             </div>
           </div>
 
           {/* 端点列表 */}
           <div className="p-2 max-h-[320px] overflow-y-auto">
-            {groups.map((endpoint) => {
+            {sortedGroups.map((endpoint) => {
               const isActive = endpoint.name === activeGroup;
               const health = getHealthStyle(endpoint);
 
@@ -167,11 +172,18 @@ const ActiveGroupSwitcher = ({
                     <span className={`w-2 h-2 rounded-full ${health.dot}`} />
 
                     <div className="flex flex-col">
-                      {/* 端点名称 */}
-                      <span className={`font-medium ${isActive ? 'text-indigo-700' : 'text-gray-800'}`}>
-                        {endpoint.name}
-                      </span>
-                      {/* 健康状态文字 */}
+                      {/* 端点名称 + 渠道 */}
+                      <div className="flex items-center gap-2">
+                        <span className={`font-medium ${isActive ? 'text-indigo-700' : 'text-gray-800'}`}>
+                          {endpoint.name}
+                        </span>
+                        {endpoint.channel && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">
+                            {endpoint.channel}
+                          </span>
+                        )}
+                      </div>
+                      {/* 健康状态 */}
                       <span className={`text-[10px] ${health.color}`}>
                         {health.text}
                         {endpoint.in_cooldown && ' · 冷却中'}
