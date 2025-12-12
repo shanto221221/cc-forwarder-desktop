@@ -3,111 +3,48 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'  # 触发条件：推送以 v 开头的标签 (如 v2.1.1)
-  workflow_dispatch:  # 允许手动触发
+      - 'v*'
+  workflow_dispatch:
 
 env:
   GO_VERSION: '1.23'
+  NODE_VERSION: '20'
 
-# 设置权限以允许创建Release
 permissions:
   contents: write
 
 jobs:
-  # Temporarily disable tests for v1.0.0 release - core functionality is working
-  # test:
-  #   name: Run Tests
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - name: Checkout code
-  #       uses: actions/checkout@v4
-
-  #     - name: Set up Go
-  #       uses: actions/setup-go@v5
-  #       with:
-  #         go-version: ${{ env.GO_VERSION }}
-
-  #     - name: Cache Go modules
-  #       uses: actions/cache@v4
-  #       with:
-  #         path: ~/go/pkg/mod
-  #         key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-  #         restore-keys: |
-  #           ${{ runner.os }}-go-
-
-  #     - name: Download dependencies
-  #       run: go mod download
-
-  #     - name: Run tests
-  #       run: |
-  #         # 跳过一些集成测试以避免测试环境问题
-  #         go test -v ./config ./internal/endpoint ./internal/proxy ./tests/unit/config ./tests/unit/endpoint ./tests/unit/monitor ./tests/unit/proxy
-
-  #     - name: Run build test
-  #       run: go build -v ./...
-
-  build:
-    name: Build Release Binaries
-    runs-on: ubuntu-latest
-    # needs: test  # Disable test dependency temporarily
+  build-macos:
+    name: Build macOS
+    runs-on: macos-latest
     strategy:
       matrix:
-        include:
-          # Linux builds
-          - goos: linux
-            goarch: amd64
-            name: cc-forwarder-linux-amd64
-          - goos: linux
-            goarch: arm64
-            name: cc-forwarder-linux-arm64
-          - goos: linux
-            goarch: arm
-            name: cc-forwarder-linux-armv7
-          # Windows builds
-          - goos: windows
-            goarch: amd64
-            name: cc-forwarder-windows-amd64
-          - goos: windows
-            goarch: arm64
-            name: cc-forwarder-windows-arm64
-          # macOS builds
-          - goos: darwin
-            goarch: amd64
-            name: cc-forwarder-darwin-amd64
-          - goos: darwin
-            goarch: arm64
-            name: cc-forwarder-darwin-arm64
-
+        platform:
+          - darwin/amd64
+          - darwin/arm64
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Go
+      - name: Setup Go
         uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
 
-      - name: Cache Go modules
-        uses: actions/cache@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          path: |
-            ~/go/pkg/mod
-            ~/.cache/go-build
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
-        continue-on-error: true  # 缓存失败不阻止构建
+          node-version: ${{ env.NODE_VERSION }}
 
-      - name: Download dependencies
-        run: go mod download
+      - name: Install Wails
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
 
-      - name: Verify build
+      - name: Install frontend dependencies
         run: |
-          echo "🔍 Verifying code compiles successfully..."
-          go build -v ./...
-          echo "✅ Build verification passed"
+          cd frontend
+          npm install
 
-      - name: Get version from tag
+      - name: Get version
         run: |
           if [[ "${{ github.ref }}" == refs/tags/* ]]; then
             echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
@@ -115,394 +52,188 @@ jobs:
             echo "VERSION=dev-$(git rev-parse --short HEAD)" >> $GITHUB_ENV
           fi
 
-      - name: Build binary
-        env:
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
-          CGO_ENABLED: 0  # 使用纯Go SQLite，无需CGO
+      - name: Build
         run: |
-          # 构建时嵌入版本信息
-          BUILD_TIME=$(date -u '+%Y-%m-%d_%H:%M:%S_UTC')
-          COMMIT_HASH=$(git rev-parse --short HEAD)
-          
-          LDFLAGS="-s -w -X main.version=${{ env.VERSION }} -X main.date=${BUILD_TIME} -X main.commit=${COMMIT_HASH}"
-          
-          # Windows 需要 .exe 后缀
-          BINARY_NAME="cc-forwarder"
-          if [ "$GOOS" = "windows" ]; then
-            BINARY_NAME="cc-forwarder.exe"
-          fi
-          
-          echo "Building ${{ matrix.name }} for $GOOS/$GOARCH (纯Go模式，无CGO依赖)"
-          go build -ldflags "$LDFLAGS" -o dist/${{ matrix.name }}/${BINARY_NAME} .
+          PLATFORM="${{ matrix.platform }}"
+          ARCH="${PLATFORM#*/}"
+          wails build -platform ${{ matrix.platform }} -ldflags "-X main.version=${{ env.VERSION }}"
 
-      - name: Prepare release assets
+      - name: Package
         run: |
-          mkdir -p dist/${{ matrix.name }}
-          
-          # 复制必要文件到发布目录
-          cp README.md dist/${{ matrix.name }}/
-          # 注意: CLAUDE.md 是开发配置文件，不包含在用户发布包中
-          cp -r config dist/${{ matrix.name }}/
-          
-          # 创建数据目录和说明文件
-          mkdir -p dist/${{ matrix.name }}/data
-          cat > dist/${{ matrix.name }}/data/README.txt << 'EOF'
-          数据存储目录
-          ============
+          PLATFORM="${{ matrix.platform }}"
+          ARCH="${PLATFORM#*/}"
+          cd build/bin
 
-          此目录用于存储应用数据：
-
-          📊 usage.db - SQLite数据库文件，存储请求使用记录和统计信息
-               - 自动创建（首次启动时）
-               - 包含请求日志、token使用量、成本统计
-               - 可通过Web界面查看和导出
-               - 支持数据保留策略配置
-
-          💡 重要提示：
-             • 请确保此目录有读写权限
-             • 建议定期备份数据库文件
-             • 数据库路径可在 config/config.yaml 中配置
-             • 如需迁移，直接复制整个data目录即可
-
-          📁 目录结构示例：
-             data/
-             ├── usage.db      (SQLite数据库)
-             └── README.txt    (本说明文件)
-          EOF
-          
-          # 创建部署指南
-          cat > dist/${{ matrix.name }}/DEPLOYMENT.md << 'EOF'
-          # CC-Forwarder 部署指南
-
-          ## 🚀 快速开始
-
-          ### 1. 解压文件
-          ```bash
-          # Linux/macOS
-          tar -xzf cc-forwarder-*.tar.gz
-          cd cc-forwarder-*/
-
-          # Windows  
-          # 解压 cc-forwarder-*.zip
-          # 进入解压后的目录
-          ```
-
-          ### 2. 配置应用
-          ```bash
-          # 复制配置模板
-          cp config/example.yaml config/config.yaml
-
-          # 编辑配置文件
-          # Linux/macOS: vim config/config.yaml
-          # Windows: notepad config/config.yaml
-          ```
-
-          ### 3. 启动应用
-          ```bash
-          # Linux/macOS: 使用启动脚本
-          ./start.sh
-
-          # 或直接运行
-          ./cc-forwarder -config config/config.yaml
-
-          # Windows: 双击 start.bat 或使用命令行
-          cc-forwarder.exe -config config/config.yaml
-          ```
-
-          ## 📊 数据存储说明
-
-          ### SQLite数据库
-          - **位置**: `data/usage.db`
-          - **用途**: 存储请求使用记录、token统计、成本分析
-          - **自动创建**: 首次启动时自动创建数据库和表结构
-          - **Web查看**: 启动后访问 http://localhost:8010 查看统计信息
-
-          ### 数据备份
-          ```bash
-          # 备份整个数据目录
-          cp -r data data_backup_$(date +%Y%m%d)
-
-          # 或仅备份数据库
-          cp data/usage.db usage_backup_$(date +%Y%m%d).db
-          ```
-
-          ### 数据迁移
-          1. 停止应用
-          2. 复制 `data/` 目录到新位置
-          3. 更新配置文件中的 `database_path` 路径
-          4. 重启应用
-
-          ## 🔧 高级配置
-
-          ### 使用跟踪配置
-          ```yaml
-          usage_tracking:
-            enabled: true                    # 启用使用跟踪
-            database_path: "data/usage.db"   # 数据库路径
-            retention_days: 90               # 数据保留天数
-          ```
-
-          ### Web界面配置
-          ```yaml
-          web:
-            enabled: true
-            host: "0.0.0.0"     # 允许外部访问
-            port: 8010          # Web端口
-          ```
-
-          ## 📋 目录结构
-          ```
-          cc-forwarder/
-          ├── cc-forwarder          # 主程序
-          ├── start.sh              # 启动脚本
-          ├── config/
-          │   ├── config.yaml       # 主配置文件（需要手动创建）
-          │   └── example.yaml      # 配置模板
-          ├── data/
-          │   ├── usage.db          # 数据库（自动创建）
-          │   └── README.txt        # 数据目录说明
-          ├── README.md             # 项目说明
-          └── DEPLOYMENT.md         # 本部署指南
-          ```
-
-          ## ❓ 常见问题
-
-          ### Q: 数据库文件很大怎么办？
-          A: 配置数据保留策略，自动清理旧数据：
-          ```yaml
-          usage_tracking:
-            retention_days: 30    # 只保留30天数据
-            cleanup_interval: "24h"
-          ```
-
-          ### Q: 如何重置数据？
-          A: 停止应用，删除 `data/usage.db` 文件，重启即可
-
-          ### Q: 可以使用外部数据库吗？
-          A: 目前仅支持SQLite，未来可能支持MySQL/PostgreSQL
-          EOF
-          
-          # 创建启动脚本 (Linux/macOS)
-          if [ "${{ matrix.goos }}" != "windows" ]; then
-            cat > dist/${{ matrix.name }}/start.sh << 'EOF'
-          #!/bin/bash
-          # CC-Forwarder 启动脚本
-          
-          echo "🚀 CC-Forwarder 启动检查..."
-          
-          # 确保配置文件存在
-          if [ ! -f "config/config.yaml" ]; then
-            echo "⚠️ 配置文件不存在，请先复制 config/example.yaml 到 config/config.yaml 并修改配置"
-            echo "💡 快速配置命令: cp config/example.yaml config/config.yaml"
-            exit 1
-          fi
-          
-          # 确保数据目录存在且有权限
-          if [ ! -d "data" ]; then
-            echo "📁 创建数据目录..."
-            mkdir -p data
-          fi
-          
-          if [ ! -w "data" ]; then
-            echo "⚠️ 数据目录没有写权限，尝试修复..."
-            chmod 755 data
-          fi
-          
-          echo "✅ 环境检查完成"
-          echo "📊 数据库位置: data/usage.db"
-          echo "🌐 Web界面: http://localhost:8010 (如已启用)"
-          echo ""
-          
-          # 启动应用
-          echo "🚀 启动 CC-Forwarder..."
-          ./cc-forwarder -config config/config.yaml
-          EOF
-            chmod +x dist/${{ matrix.name }}/start.sh
-          else
-            # Windows 批处理脚本
-            cat > dist/${{ matrix.name }}/start.bat << 'EOF'
-          @echo off
-          echo 🚀 CC-Forwarder 启动检查...
-          
-          REM 检查配置文件
-          if not exist "config\config.yaml" (
-            echo ⚠️ 配置文件不存在，请先复制 config\example.yaml 到 config\config.yaml
-            echo 💡 快速配置命令: copy config\example.yaml config\config.yaml
-            pause
-            exit /b 1
-          )
-          
-          REM 创建数据目录
-          if not exist "data" (
-            echo 📁 创建数据目录...
-            mkdir data
-          )
-          
-          echo ✅ 环境检查完成
-          echo 📊 数据库位置: data\usage.db
-          echo 🌐 Web界面: http://localhost:8010 (如已启用)
-          echo.
-          
-          REM 启动应用
-          echo 🚀 启动 CC-Forwarder...
-          cc-forwarder.exe -config config\config.yaml
-          pause
-          EOF
+          # 创建 ZIP
+          if [ -d "CC-Forwarder.app" ]; then
+            zip -r "CC-Forwarder-darwin-${ARCH}.zip" "CC-Forwarder.app"
           fi
 
-      - name: Create archive
-        run: |
-          cd dist
-          if [ "${{ matrix.goos }}" = "windows" ]; then
-            zip -r ${{ matrix.name }}.zip ${{ matrix.name }}/
-          else
-            tar -czf ${{ matrix.name }}.tar.gz ${{ matrix.name }}/
-          fi
-
-      - name: Generate checksums
-        run: |
-          cd dist
-          if [ "${{ matrix.goos }}" = "windows" ]; then
-            sha256sum ${{ matrix.name }}.zip > ${{ matrix.name }}.sha256
-          else
-            sha256sum ${{ matrix.name }}.tar.gz > ${{ matrix.name }}.sha256
-          fi
-
-      - name: Upload build artifacts
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.name }}
-          path: |
-            dist/${{ matrix.name }}.tar.gz
-            dist/${{ matrix.name }}.zip
-            dist/${{ matrix.name }}.sha256
+          name: cc-forwarder-darwin-${{ matrix.platform == 'darwin/amd64' && 'amd64' || 'arm64' }}
+          path: build/bin/*.zip
+
+  build-windows:
+    name: Build Windows
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install Wails
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+      - name: Install frontend dependencies
+        run: |
+          cd frontend
+          npm install
+
+      - name: Get version
+        shell: bash
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+          else
+            echo "VERSION=dev-$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+          fi
+
+      - name: Build
+        run: wails build -platform windows/amd64 -ldflags "-X main.version=${{ env.VERSION }}"
+
+      - name: Package
+        shell: bash
+        run: |
+          cd build/bin
+          zip -r "CC-Forwarder-windows-amd64.zip" "CC-Forwarder.exe"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cc-forwarder-windows-amd64
+          path: build/bin/*.zip
+
+  build-linux:
+    name: Build Linux
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev
+
+      - name: Install Wails
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+      - name: Install frontend dependencies
+        run: |
+          cd frontend
+          npm install
+
+      - name: Get version
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+          else
+            echo "VERSION=dev-$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+          fi
+
+      - name: Build
+        run: wails build -platform linux/amd64 -ldflags "-X main.version=${{ env.VERSION }}"
+
+      - name: Package
+        run: |
+          cd build/bin
+          tar -czf "CC-Forwarder-linux-amd64.tar.gz" "CC-Forwarder"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cc-forwarder-linux-amd64
+          path: build/bin/*.tar.gz
 
   release:
-    name: Create GitHub Release
+    name: Create Release
     runs-on: ubuntu-latest
-    needs: build
+    needs: [build-macos, build-windows, build-linux]
     if: startsWith(github.ref, 'refs/tags/')
-    
+
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # 获取完整历史用于生成变更日志
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
-          path: dist/
+          path: artifacts/
 
-      - name: Organize release files
+      - name: Prepare release files
         run: |
           mkdir -p release/
-          find dist/ -name "*.tar.gz" -o -name "*.zip" -o -name "*.sha256" | while read file; do
-            cp "$file" release/
-          done
-          
-          # 生成总体校验和文件
-          cd release/
-          sha256sum *.tar.gz *.zip > checksums.txt
+          find artifacts/ -type f \( -name "*.zip" -o -name "*.tar.gz" \) -exec cp {} release/ \;
 
-      - name: Generate release notes
-        id: release_notes
-        run: |
-          # 获取版本信息
-          VERSION=${GITHUB_REF#refs/tags/}
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
-          VERSION_NUMBER=${VERSION#v}  # 移除 v 前缀用于匹配CHANGELOG
-          
-          # 检查CHANGELOG.md是否存在
-          if [ ! -f "CHANGELOG.md" ]; then
-            echo "⚠️ CHANGELOG.md 文件不存在，使用默认发布说明"
-            CHANGELOG_CONTENT="🚀 **新版本发布！**"
-          else
-            # 从CHANGELOG.md提取当前版本的内容
-            echo "📝 从CHANGELOG.md提取版本 $VERSION_NUMBER 的变更内容..."
-            
-            # 使用awk提取当前版本的changelog内容
-            CHANGELOG_CONTENT=$(awk '
-              BEGIN { found=0; content="" }
-              /^## \[/ {
-                if (found) exit
-                if (index($0, "['$VERSION_NUMBER']") > 0) {
-                  found=1
-                  next
-                }
-              }
-              found && !/^## \[/ { 
-                content = content $0 "\n" 
-              }
-              END { print content }
-            ' CHANGELOG.md)
-            
-            # 如果没有找到对应版本内容，使用默认说明
-            if [ -z "$CHANGELOG_CONTENT" ]; then
-              echo "⚠️ 在CHANGELOG.md中未找到版本 $VERSION_NUMBER 的变更记录"
-              CHANGELOG_CONTENT="🚀 **新版本发布！**\n\n查看完整变更历史请参考 [CHANGELOG.md](./CHANGELOG.md)"
-            else
-              echo "✅ 成功提取版本 $VERSION_NUMBER 的变更内容"
-            fi
-          fi
-          
-          # 生成完整的发布说明，使用临时文件处理换行符
-          echo "## CC-Forwarder $VERSION" > release_notes.md
-          echo "" >> release_notes.md
-          echo "$CHANGELOG_CONTENT" >> release_notes.md
-          echo "" >> release_notes.md
-          echo "---" >> release_notes.md
-          echo "" >> release_notes.md
-          echo "## 📥 下载说明" >> release_notes.md
-          echo "" >> release_notes.md
-          echo "选择适合你系统的版本：" >> release_notes.md
-          echo "" >> release_notes.md
-          echo "- **Linux x64**: \`cc-forwarder-linux-amd64.tar.gz\`" >> release_notes.md
-          echo "- **Linux ARM64**: \`cc-forwarder-linux-arm64.tar.gz\`" >> release_notes.md  
-          echo "- **Linux ARMv7**: \`cc-forwarder-linux-armv7.tar.gz\`" >> release_notes.md
-          echo "- **Windows x64**: \`cc-forwarder-windows-amd64.zip\`" >> release_notes.md
-          echo "- **Windows ARM64**: \`cc-forwarder-windows-arm64.zip\`" >> release_notes.md
-          echo "- **macOS Intel**: \`cc-forwarder-darwin-amd64.tar.gz\`" >> release_notes.md
-          echo "- **macOS Apple Silicon**: \`cc-forwarder-darwin-arm64.tar.gz\`" >> release_notes.md
-          echo "" >> release_notes.md
-          echo "## 🚀 快速开始" >> release_notes.md
-          echo "" >> release_notes.md
-          echo "1. 下载对应平台的压缩包" >> release_notes.md
-          echo "2. 解压到目标目录" >> release_notes.md
-          echo "3. 复制 \`config/example.yaml\` 到 \`config/config.yaml\` 并修改配置" >> release_notes.md
-          echo "4. 运行 \`./start.sh\` (Linux/macOS) 或 \`start.bat\` (Windows)" >> release_notes.md
-          echo "" >> release_notes.md
-          echo "## 🔐 文件完整性验证" >> release_notes.md
-          echo "" >> release_notes.md
-          echo "使用 \`checksums.txt\` 验证下载文件的完整性：" >> release_notes.md
-          echo "\`\`\`bash" >> release_notes.md
-          echo "sha256sum -c checksums.txt" >> release_notes.md
-          echo "\`\`\`" >> release_notes.md
-          echo "" >> release_notes.md
-          echo "## 📚 更多信息" >> release_notes.md
-          echo "" >> release_notes.md
-          echo "- [完整文档](README.md)" >> release_notes.md
-          echo "- [变更历史](CHANGELOG.md)" >> release_notes.md
-          echo "- [问题反馈](https://github.com/${{ github.repository }}/issues)" >> release_notes.md
+          cd release/
+          sha256sum * > checksums.txt
+          ls -la
+
+      - name: Get version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           name: CC-Forwarder ${{ env.VERSION }}
-          body_path: release_notes.md
-          files: |
-            release/*
+          body: |
+            ## CC-Forwarder ${{ env.VERSION }}
+
+            ### 下载
+
+            | 平台 | 文件 |
+            |------|------|
+            | macOS (Intel) | `CC-Forwarder-darwin-amd64.zip` |
+            | macOS (Apple Silicon) | `CC-Forwarder-darwin-arm64.zip` |
+            | Windows | `CC-Forwarder-windows-amd64.zip` |
+            | Linux | `CC-Forwarder-linux-amd64.tar.gz` |
+
+            ### 安装说明
+
+            **macOS**: 解压后将 `CC-Forwarder.app` 拖入应用程序文件夹
+            **Windows**: 解压后运行 `CC-Forwarder.exe`
+            **Linux**: 解压后运行 `CC-Forwarder`
+
+            ### 校验
+
+            ```bash
+            sha256sum -c checksums.txt
+            ```
+
+            详细更新内容请查看 [CHANGELOG.md](./CHANGELOG.md)
+          files: release/*
           draft: false
           prerelease: false
-          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload release summary
-        run: |
-          echo "🎉 Release ${{ env.VERSION }} created successfully!"
-          echo "📦 Artifacts:"
-          ls -la release/
-          echo ""
-          echo "🔗 Release URL: https://github.com/${{ github.repository }}/releases/tag/${{ env.VERSION }}"
