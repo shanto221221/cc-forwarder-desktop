@@ -5,6 +5,17 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 项目遵循 [语义化版本控制](https://semver.org/lang/zh-CN/)。
 
+## [5.0.1] - 2025-12-12
+
+### 🐛 修复 (Bug Fixes)
+
+- **KPI Token 统计修复**: 概览页面的 Token 统计现在包含所有类型
+  - 修复前：仅统计 `input_tokens + output_tokens`
+  - 修复后：统计 `input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens`
+  - 影响范围：今日 Tokens、全部历史 Tokens 两个 KPI 卡片
+
+---
+
 ## [5.0.0] - 2025-12-08
 
 ### 🚀 重大变更 (Breaking Changes)

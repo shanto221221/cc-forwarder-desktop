@@ -158,11 +158,11 @@ func (a *App) queryStatsFromDB(ctx context.Context, startTime, endTime time.Time
 	var args []interface{}
 
 	if startTime.IsZero() {
-		// 查询全部历史
-		query = "SELECT COALESCE(SUM(total_cost_usd), 0), COALESCE(SUM(input_tokens + output_tokens), 0), COUNT(*) FROM request_logs"
+		// 查询全部历史（包含所有 token 类型：输入、输出、缓存创建、缓存读取）
+		query = "SELECT COALESCE(SUM(total_cost_usd), 0), COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens), 0), COUNT(*) FROM request_logs"
 	} else {
-		// 查询指定时间范围
-		query = "SELECT COALESCE(SUM(total_cost_usd), 0), COALESCE(SUM(input_tokens + output_tokens), 0), COUNT(*) FROM request_logs WHERE start_time >= ? AND start_time < ?"
+		// 查询指定时间范围（包含所有 token 类型）
+		query = "SELECT COALESCE(SUM(total_cost_usd), 0), COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens), 0), COUNT(*) FROM request_logs WHERE start_time >= ? AND start_time < ?"
 		args = append(args, startTime, endTime)
 	}
 
