@@ -685,7 +685,14 @@ export const getEndpointRecords = async () => {
     updatedAt: r.updated_at,
     healthy: r.healthy,
     lastCheck: r.last_check,
-    responseTimeMs: r.response_time_ms
+    responseTimeMs: r.response_time_ms,
+    // 冷却状态（请求级故障转移）
+    in_cooldown: r.in_cooldown,
+    inCooldown: r.in_cooldown,
+    cooldown_until: r.cooldown_until,
+    cooldownUntil: r.cooldown_until,
+    cooldown_reason: r.cooldown_reason,
+    cooldownReason: r.cooldown_reason
   }));
 };
 

@@ -563,6 +563,27 @@ func (sh *StreamingHandler) executeStreamingWithRetry(ctx context.Context, w htt
 		}
 	}
 
+	// 🔄 [请求级故障转移] 所有端点都失败了，尝试触发故障转移
+	if lastFailedEndpoint != "" {
+		newEndpointName, err := sh.endpointManager.TriggerRequestFailover(
+			lastFailedEndpoint,
+			"all_retries_exhausted",
+		)
+
+		if err == nil && newEndpointName != "" {
+			slog.Info(fmt.Sprintf("🔄 [请求级故障转移] [%s] 端点 %s 进入冷却，切换到 %s",
+				connID, lastFailedEndpoint, newEndpointName))
+			// 故障转移成功，重新获取端点列表继续处理
+			fmt.Fprintf(w, "data: failover: 端点 %s 故障，已切换到 %s\n\n", lastFailedEndpoint, newEndpointName)
+			flusher.Flush()
+			sh.executeStreamingWithRetry(ctx, w, r, bodyBytes, lifecycleManager, flusher)
+			return
+		} else if err != nil {
+			slog.Warn(fmt.Sprintf("⚠️ [请求级故障转移失败] [%s] 端点: %s, 错误: %v",
+				connID, lastFailedEndpoint, err))
+		}
+	}
+
 	// 🔧 所有当前端点都失败，检查是否应该挂起请求
 	// 注意：客户端取消错误已在上面统一处理，这里不会执行到
 

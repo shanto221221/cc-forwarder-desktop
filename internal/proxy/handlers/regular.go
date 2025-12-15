@@ -286,7 +286,28 @@ func (rh *RegularHandler) HandleRegularRequestUnified(ctx context.Context, w htt
 			continue
 		}
 
-		// 所有端点都失败了，终止处理
+		// 所有端点都失败了，尝试触发请求级别故障转移
+		if len(endpoints) > 0 {
+			lastEndpoint := endpoints[len(endpoints)-1]
+
+			newEndpointName, err := rh.endpointManager.TriggerRequestFailover(
+				lastEndpoint.Config.Name,
+				"all_retries_exhausted",
+			)
+
+			if err == nil && newEndpointName != "" {
+				slog.Info(fmt.Sprintf("🔄 [请求级故障转移] [%s] 端点 %s 进入冷却，切换到 %s",
+					connID, lastEndpoint.Config.Name, newEndpointName))
+				// 故障转移成功，重新获取端点列表继续处理
+				groupSwitchNeeded = true
+				continue
+			} else if err != nil {
+				slog.Warn(fmt.Sprintf("⚠️ [请求级故障转移失败] [%s] 端点: %s, 错误: %v",
+					connID, lastEndpoint.Config.Name, err))
+			}
+		}
+
+		// 故障转移失败或无可用端点，终止处理
 		break
 	}
 

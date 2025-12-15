@@ -389,6 +389,9 @@ export namespace main {
 	    healthy: boolean;
 	    last_check: string;
 	    response_time_ms: number;
+	    in_cooldown: boolean;
+	    cooldown_until: string;
+	    cooldown_reason: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new EndpointRecordInfo(source);
@@ -419,6 +422,9 @@ export namespace main {
 	        this.healthy = source["healthy"];
 	        this.last_check = source["last_check"];
 	        this.response_time_ms = source["response_time_ms"];
+	        this.in_cooldown = source["in_cooldown"];
+	        this.cooldown_until = source["cooldown_until"];
+	        this.cooldown_reason = source["cooldown_reason"];
 	    }
 	}
 	export class EndpointStorageStatus {

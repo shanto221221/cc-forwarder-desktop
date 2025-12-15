@@ -44,6 +44,10 @@ type EndpointRecordInfo struct {
 	Healthy        bool    `json:"healthy"`
 	LastCheck      string  `json:"last_check"`       // 最后健康检查时间
 	ResponseTimeMs float64 `json:"response_time_ms"`
+	// 冷却状态（请求级故障转移）
+	InCooldown     bool   `json:"in_cooldown"`     // 是否处于冷却中
+	CooldownUntil  string `json:"cooldown_until"`  // 冷却截止时间
+	CooldownReason string `json:"cooldown_reason"` // 冷却原因
 }
 
 // CreateEndpointInput 创建端点的输入参数
@@ -137,6 +141,12 @@ func (a *App) GetEndpointRecords() ([]EndpointRecordInfo, error) {
 			// 格式化最后检查时间
 			if !status.LastCheck.IsZero() {
 				info.LastCheck = status.LastCheck.Format("2006-01-02 15:04:05")
+			}
+			// 冷却状态
+			if !status.CooldownUntil.IsZero() && status.CooldownUntil.After(time.Now()) {
+				info.InCooldown = true
+				info.CooldownUntil = status.CooldownUntil.Format("2006-01-02 15:04:05")
+				info.CooldownReason = status.CooldownReason
 			}
 		}
 
@@ -542,6 +552,12 @@ func (a *App) GetEndpointsByChannel(channel string) ([]EndpointRecordInfo, error
 			// 格式化最后检查时间
 			if !status.LastCheck.IsZero() {
 				info.LastCheck = status.LastCheck.Format("2006-01-02 15:04:05")
+			}
+			// 冷却状态
+			if !status.CooldownUntil.IsZero() && status.CooldownUntil.After(time.Now()) {
+				info.InCooldown = true
+				info.CooldownUntil = status.CooldownUntil.Format("2006-01-02 15:04:05")
+				info.CooldownReason = status.CooldownReason
 			}
 		}
 

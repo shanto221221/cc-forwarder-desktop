@@ -21,7 +21,8 @@ import {
   ShieldCheck,
   CheckCircle2,
   XCircle,
-  Clock
+  Clock,
+  Timer
 } from 'lucide-react';
 import {
   Button,
@@ -136,6 +137,38 @@ const HealthBadge = ({ healthy, neverChecked }) => {
   );
 };
 
+// 冷却状态徽章
+const CooldownBadge = ({ inCooldown, cooldownUntil, cooldownReason }) => {
+  if (!inCooldown) return null;
+
+  // 格式化剩余冷却时间
+  const formatRemainingTime = (until) => {
+    if (!until) return '';
+    try {
+      const endTime = new Date(until);
+      const now = new Date();
+      const diffMs = endTime - now;
+      if (diffMs <= 0) return '即将恢复';
+      const diffMins = Math.ceil(diffMs / 60000);
+      if (diffMins < 60) return `${diffMins}分钟`;
+      const diffHours = Math.floor(diffMins / 60);
+      return `${diffHours}小时${diffMins % 60}分`;
+    } catch {
+      return '';
+    }
+  };
+
+  return (
+    <div
+      className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-50 text-amber-600 border border-amber-200 cursor-help"
+      title={`冷却原因: ${cooldownReason || '请求失败'}\n恢复时间: ${cooldownUntil}`}
+    >
+      <Timer size={10} className="mr-1 animate-pulse" />
+      冷却中 {formatRemainingTime(cooldownUntil)}
+    </div>
+  );
+};
+
 // 延迟指示器
 const LatencyBadge = ({ ms }) => {
   if (!ms || ms === 0) return <span className="text-slate-300 text-xs">-</span>;
@@ -219,11 +252,16 @@ const EndpointRow = ({
       <td className="px-6 py-4">
         <div className="flex flex-col space-y-1.5">
           <span className="font-bold text-slate-900 text-sm">{endpoint.name}</span>
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-2 flex-wrap gap-y-1">
             <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-blue-50 text-blue-600 border border-blue-100">
               {endpoint.channel || endpoint.group || '-'}
             </span>
             <HealthBadge healthy={endpoint.healthy} neverChecked={isNeverChecked} />
+            <CooldownBadge
+              inCooldown={endpoint.in_cooldown || endpoint.inCooldown}
+              cooldownUntil={endpoint.cooldown_until || endpoint.cooldownUntil}
+              cooldownReason={endpoint.cooldown_reason || endpoint.cooldownReason}
+            />
           </div>
         </div>
       </td>
@@ -448,11 +486,12 @@ const EndpointsPage = () => {
         healthy: storageEndpoints.filter(e => e.healthy).length,
         unhealthy: storageEndpoints.filter(e => !e.healthy && e.lastCheck).length,
         unchecked: storageEndpoints.filter(e => !e.lastCheck).length,
+        cooldown: storageEndpoints.filter(e => e.in_cooldown || e.inCooldown).length,
         healthPercentage: storageEndpoints.length > 0
           ? ((storageEndpoints.filter(e => e.healthy).length / storageEndpoints.length) * 100).toFixed(1)
           : 0
       }
-    : stats;
+    : { ...stats, cooldown: 0 };
 
   // ============================================
   // CRUD 操作处理
@@ -632,6 +671,13 @@ const EndpointsPage = () => {
           <div className="text-2xl font-bold text-rose-600">{displayStats.unhealthy}</div>
           <div className="text-sm text-slate-500">不健康端点</div>
         </div>
+        {/* 冷却中端点卡片 - 仅在有冷却端点时显示 */}
+        {displayStats.cooldown > 0 && (
+          <div className="bg-white rounded-xl border border-amber-200/60 p-4 shadow-sm">
+            <div className="text-2xl font-bold text-amber-600">{displayStats.cooldown}</div>
+            <div className="text-sm text-slate-500">冷却中</div>
+          </div>
+        )}
         <div className="bg-white rounded-xl border border-slate-200/60 p-4 shadow-sm">
           <div className="text-2xl font-bold text-slate-400">{displayStats.unchecked}</div>
           <div className="text-sm text-slate-500">未检测端点</div>

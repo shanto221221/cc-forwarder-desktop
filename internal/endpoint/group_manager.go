@@ -518,9 +518,23 @@ func (gm *GroupManager) ManualActivateGroupWithForce(groupName string, force boo
 	return nil
 }
 
-// ManualActivateGroupCompat 兼容性函数，默认不强制激活
-func (gm *GroupManager) ManualActivateGroupCompat(groupName string) error {
-	return gm.ManualActivateGroupWithForce(groupName, false)
+// DeactivateGroup 停用指定组（用于故障转移时停用失败的端点）
+// 注意：这只是简单地设置 IsActive=false，不设置 ManuallyPaused 标志
+func (gm *GroupManager) DeactivateGroup(groupName string) error {
+	gm.mutex.Lock()
+	defer gm.mutex.Unlock()
+
+	targetGroup, exists := gm.groups[groupName]
+	if !exists {
+		return fmt.Errorf("组不存在: %s", groupName)
+	}
+
+	if targetGroup.IsActive {
+		targetGroup.IsActive = false
+		slog.Info(fmt.Sprintf("🔴 [组管理] 组已停用: %s", groupName))
+	}
+
+	return nil
 }
 
 // ManualPauseGroup manually pauses a group (prevents it from being auto-activated)

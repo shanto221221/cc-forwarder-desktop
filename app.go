@@ -118,6 +118,25 @@ func (a *App) startup(ctx context.Context) {
 		a.emitEndpointUpdate()
 	})
 
+	// v5.x+ 设置故障转移回调，同步数据库状态
+	a.endpointManager.SetOnFailoverTriggered(func(failedEndpoint, newEndpoint string) {
+		// 同步数据库: 禁用失败的端点，启用新端点
+		if a.endpointService != nil {
+			ctx := context.Background()
+			// 禁用失败的端点
+			if err := a.endpointService.ToggleEndpoint(ctx, failedEndpoint, false); err != nil {
+				slog.Warn(fmt.Sprintf("⚠️ [故障转移回调] 禁用端点失败: %s - %v", failedEndpoint, err))
+			}
+			// 启用新端点
+			if err := a.endpointService.ToggleEndpoint(ctx, newEndpoint, true); err != nil {
+				slog.Warn(fmt.Sprintf("⚠️ [故障转移回调] 启用端点失败: %s - %v", newEndpoint, err))
+			}
+			slog.Info(fmt.Sprintf("✅ [故障转移回调] 数据库已同步: %s → %s", failedEndpoint, newEndpoint))
+		}
+		// 推送事件到前端
+		a.emitEndpointUpdate()
+	})
+
 	// 7. 初始化端点存储 (v5.0+ SQLite, 需要在创建 Manager 之后)
 	// 从数据库同步端点到 Manager
 	if a.config.EndpointsStorage.Type == "sqlite" {
