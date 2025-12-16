@@ -370,6 +370,8 @@ export namespace main {
 	    channel: string;
 	    name: string;
 	    url: string;
+	    token: string;
+	    api_key: string;
 	    token_masked: string;
 	    api_key_masked: string;
 	    headers: Record<string, string>;
@@ -403,6 +405,8 @@ export namespace main {
 	        this.channel = source["channel"];
 	        this.name = source["name"];
 	        this.url = source["url"];
+	        this.token = source["token"];
+	        this.api_key = source["api_key"];
 	        this.token_masked = source["token_masked"];
 	        this.api_key_masked = source["api_key_masked"];
 	        this.headers = source["headers"];

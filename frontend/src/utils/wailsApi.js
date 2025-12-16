@@ -671,6 +671,8 @@ export const getEndpointRecords = async () => {
     channel: r.channel,
     name: r.name,
     url: r.url,
+    token: r.token,       // v5.0: 本地桌面应用，直接返回原始 Token
+    apiKey: r.api_key,    // v5.0: 本地桌面应用，直接返回原始 ApiKey
     tokenMasked: r.token_masked,
     apiKeyMasked: r.api_key_masked,
     headers: r.headers || {},

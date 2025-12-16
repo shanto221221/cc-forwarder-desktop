@@ -4,7 +4,7 @@
 // ============================================
 
 import { useState } from 'react';
-import { X, Save, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import { X, Save, AlertCircle, ChevronDown, ChevronUp, Eye, EyeOff } from 'lucide-react';
 import { Button } from '@components/ui';
 
 // ============================================
@@ -34,6 +34,39 @@ const FormInput = ({ label, name, value, onChange, type = 'text', placeholder, r
     {help && <p className="text-xs text-slate-400">{help}</p>}
   </div>
 );
+
+// 密码输入组件（带显示/隐藏切换）
+const PasswordInput = ({ label, name, value, onChange, placeholder, required, help }) => {
+  const [showPassword, setShowPassword] = useState(false);
+
+  return (
+    <div className="space-y-1">
+      <label className="block text-sm font-medium text-slate-700">
+        {label}
+        {required && <span className="text-rose-500 ml-1">*</span>}
+      </label>
+      <div className="relative">
+        <input
+          type={showPassword ? 'text' : 'password'}
+          name={name}
+          value={value || ''}
+          onChange={onChange}
+          placeholder={placeholder}
+          className="w-full px-3 py-2 pr-10 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+        />
+        <button
+          type="button"
+          onClick={() => setShowPassword(!showPassword)}
+          className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 transition-colors"
+          title={showPassword ? '隐藏' : '显示'}
+        >
+          {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+        </button>
+      </div>
+      {help && <p className="text-xs text-slate-400">{help}</p>}
+    </div>
+  );
+};
 
 const FormCheckbox = ({ label, name, checked, onChange, help }) => (
   <div className="flex items-start gap-3">
@@ -70,8 +103,8 @@ const EndpointForm = ({
         channel: endpoint.channel || '',
         name: endpoint.name || '',
         url: endpoint.url || '',
-        token: '', // 编辑模式不预填 Token（安全考虑）
-        apiKey: '',
+        token: endpoint.token || '', // v5.0: 本地桌面应用，直接显示已保存的 Token
+        apiKey: endpoint.apiKey || '', // v5.0: 本地桌面应用，直接显示已保存的 ApiKey
         priority: endpoint.priority || 1,
         failoverEnabled: endpoint.failoverEnabled !== false,
         cooldownSeconds: endpoint.cooldownSeconds || '',
@@ -254,15 +287,14 @@ const EndpointForm = ({
             </h3>
 
             <div>
-              <FormInput
+              <PasswordInput
                 label="Token"
                 name="token"
                 value={formData.token}
                 onChange={handleChange}
-                type="password"
-                placeholder={isEditMode ? '留空则保持原值' : 'sk-...'}
+                placeholder="sk-..."
                 required={!isEditMode}
-                help={isEditMode ? '留空则保持原有 Token 不变' : 'Bearer Token 认证'}
+                help="Bearer Token 认证。清空后保存将保留原值"
               />
               {errors.token && (
                 <p className="text-xs text-rose-500 mt-1">{errors.token}</p>
@@ -270,14 +302,13 @@ const EndpointForm = ({
             </div>
 
             <div>
-              <FormInput
+              <PasswordInput
                 label="API Key (可选)"
                 name="apiKey"
                 value={formData.apiKey}
                 onChange={handleChange}
-                type="password"
-                placeholder={isEditMode ? '留空则保持原值' : '可选的 API Key'}
-                help="备用认证方式"
+                placeholder="可选的 API Key"
+                help="备用认证方式。清空后保存将保留原值"
               />
             </div>
           </div>

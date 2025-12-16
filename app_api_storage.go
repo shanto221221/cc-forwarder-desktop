@@ -24,7 +24,9 @@ type EndpointRecordInfo struct {
 	Channel                     string            `json:"channel"`
 	Name                        string            `json:"name"`
 	URL                         string            `json:"url"`
-	TokenMasked                 string            `json:"token_masked"` // 脱敏后的 Token
+	Token                       string            `json:"token"`        // v5.0: 本地桌面应用，直接返回原始 Token
+	ApiKey                      string            `json:"api_key"`      // v5.0: 本地桌面应用，直接返回原始 ApiKey
+	TokenMasked                 string            `json:"token_masked"` // 脱敏后的 Token（列表展示用）
 	ApiKeyMasked                string            `json:"api_key_masked"`
 	Headers                     map[string]string `json:"headers"`
 	Priority                    int               `json:"priority"`
@@ -300,13 +302,13 @@ func (a *App) UpdateEndpointRecord(name string, input CreateEndpointInput) error
 		return fmt.Errorf("获取端点失败: %w", err)
 	}
 
-	// 处理 Token: 如果前端传空值，保留原有 Token（安全考虑，编辑时不回显 Token）
+	// 处理 Token: 如果前端传空值，保留原有 Token（防止误删）
 	token := input.Token
 	if token == "" {
 		token = existingRecord.Token
 	}
 
-	// 处理 ApiKey: 同样逻辑
+	// 处理 ApiKey: 如果前端传空值，保留原有 ApiKey（防止误删）
 	apiKey := input.ApiKey
 	if apiKey == "" {
 		apiKey = existingRecord.ApiKey
@@ -574,6 +576,8 @@ func (a *App) recordToInfo(r *store.EndpointRecord) EndpointRecordInfo {
 		Channel:                     r.Channel,
 		Name:                        r.Name,
 		URL:                         r.URL,
+		Token:                       r.Token,  // v5.0: 本地桌面应用，直接返回原始 Token
+		ApiKey:                      r.ApiKey, // v5.0: 本地桌面应用，直接返回原始 ApiKey
 		TokenMasked:                 maskToken(r.Token),
 		ApiKeyMasked:                maskToken(r.ApiKey),
 		Headers:                     r.Headers,
