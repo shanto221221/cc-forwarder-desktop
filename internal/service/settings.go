@@ -392,6 +392,7 @@ func (s *SettingsService) getDefaultsForCategory(category string) []*store.Setti
 			{Category: CategoryRequest, Key: "suspend_enabled", Value: "false", ValueType: ValueTypeBool, Label: "启用请求挂起", Description: "当所有端点不可用时挂起请求等待恢复", DisplayOrder: 2},
 			{Category: CategoryRequest, Key: "suspend_timeout", Value: "300s", ValueType: ValueTypeDuration, Label: "挂起超时", Description: "请求挂起的最大等待时间", DisplayOrder: 3},
 			{Category: CategoryRequest, Key: "max_suspended", Value: "100", ValueType: ValueTypeInt, Label: "最大挂起数", Description: "同时挂起的最大请求数量", DisplayOrder: 4},
+			{Category: CategoryRequest, Key: "eof_retry_hint", Value: "false", ValueType: ValueTypeBool, Label: "EOF 重试提示", Description: "流式传输中断时发送可重试错误格式，让客户端自动重试", DisplayOrder: 5},
 		}
 
 	case CategoryStreaming:

@@ -108,6 +108,7 @@ type RequestSuspendConfig struct {
 	Enabled            bool          `yaml:"enabled"`               // Enable request suspension feature, default: false
 	Timeout            time.Duration `yaml:"timeout"`               // Timeout for suspended requests, default: 300s
 	MaxSuspendedRequests int          `yaml:"max_suspended_requests"` // Maximum number of suspended requests, default: 100
+	EOFRetryHint       bool          `yaml:"eof_retry_hint"`        // Send retryable error format on EOF, default: false
 }
 
 // ModelPricing 模型定价配置

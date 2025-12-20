@@ -5,6 +5,34 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 项目遵循 [语义化版本控制](https://semver.org/lang/zh-CN/)。
 
+## [5.2.0] - 2025-12-20
+
+### ✨ 新增功能 (New Features)
+
+- **EOF 重试提示**: 流式传输中断时发送 Anthropic API 标准格式的可重试错误
+  - 新增 `eof_retry_hint` 配置项（默认关闭）
+  - 发送 `overloaded_error` 类型错误，让 Claude Code 等客户端能自动重试
+  - 精确识别流式传输阶段的 EOF 错误，不影响连接阶段的错误处理
+
+- **端点渠道分组显示**: 端点管理页面按渠道折叠/展开显示
+  - 端点按渠道（channel）分组，支持折叠/展开
+  - 渠道行显示端点数量和健康状态汇总
+  - 全部展开/折叠快捷操作
+  - 组件拆分重构，提升代码可维护性
+
+### 🔧 改进 (Improvements)
+
+- **请求状态文字优化**: 状态标签更加一致
+  - "挂起" → "已挂起"
+  - "失败" → "已失败"
+  - "超时" → "已超时"
+
+- **CompleteRequestWithQuality 原子操作**: 避免请求完成时的时序问题
+  - 一次性完成 status、tokens、duration 和 failureReason 的设置
+  - 解决两次独立操作可能导致的数据不一致
+
+---
+
 ## [5.1.0] - 2025-12-17
 
 ### ✨ 新增功能 (New Features)

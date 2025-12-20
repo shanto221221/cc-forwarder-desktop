@@ -511,6 +511,7 @@ func (ut *UsageTracker) buildFlexibleUpdateQuery(event RequestEvent) (string, []
 
 // buildSuccessQuery 构建成功完成的查询
 // 一次性更新所有成功相关字段：status='completed', end_time, duration_ms, Token和成本信息
+// 🔧 [方案A补充] 2025-12-20: 增加 failure_reason 写入支持
 func (ut *UsageTracker) buildSuccessQuery(event RequestEvent) (string, []interface{}, error) {
 	data, ok := event.Data.(RequestCompleteData)
 	if !ok {
@@ -527,6 +528,7 @@ func (ut *UsageTracker) buildSuccessQuery(event RequestEvent) (string, []interfa
 
 	inputCost, outputCost, cacheCost, readCost, totalCost := ut.calculateCost(data.ModelName, tokens)
 
+	// 🔧 [方案A补充] 支持 failure_reason 写入（用于数据质量标记，如 stream_truncated）
 	query := fmt.Sprintf(`UPDATE request_logs SET
 		end_time = ?,
 		duration_ms = ?,
@@ -540,6 +542,7 @@ func (ut *UsageTracker) buildSuccessQuery(event RequestEvent) (string, []interfa
 		cache_creation_cost_usd = ?,
 		cache_read_cost_usd = ?,
 		total_cost_usd = ?,
+		failure_reason = ?,
 		http_status_code = CASE WHEN http_status_code IS NULL OR http_status_code = 0 THEN 200 ELSE http_status_code END,
 		status = 'completed',
 		updated_at = %s
@@ -558,6 +561,7 @@ func (ut *UsageTracker) buildSuccessQuery(event RequestEvent) (string, []interfa
 		cacheCost,
 		readCost,
 		totalCost,
+		data.FailureReason, // 🔧 [方案A补充] 写入 failure_reason（可为空）
 		event.RequestID,
 	}
 

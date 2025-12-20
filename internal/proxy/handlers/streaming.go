@@ -66,6 +66,38 @@ func (f *noOpFlusher) Flush() {
 	// 不执行任何操作，避免panic但保持流式处理逻辑
 }
 
+// sendAnthropicRetryableError 发送 Anthropic API 标准格式的可重试错误事件
+// 使用 overloaded_error 类型，Claude Code 等客户端会识别并自动重试
+func sendAnthropicRetryableError(w http.ResponseWriter, flusher http.Flusher, message string) {
+	// 发送 SSE 格式的 error 事件
+	// 格式: event: error\ndata: {"type":"error","error":{"type":"xxx","message":"xxx"}}\n\n
+	fmt.Fprintf(w, "event: error\n")
+	fmt.Fprintf(w, "data: {\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"%s\"}}\n\n",
+		escapeJSONString(message))
+	flusher.Flush()
+}
+
+// isStreamingEOFError 检查错误是否为流式传输过程中的 EOF 错误
+// 只匹配在流式响应过程中服务端突然断开的情况（已收到 200 响应）
+func isStreamingEOFError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errStr := strings.ToLower(err.Error())
+	// 检查是否包含 stream_status 前缀（表示已进入流式处理阶段）且包含 eof
+	return strings.Contains(errStr, "stream_status:") && strings.Contains(errStr, "eof")
+}
+
+// escapeJSONString 对字符串进行 JSON 转义
+func escapeJSONString(s string) string {
+	s = strings.ReplaceAll(s, "\\", "\\\\")
+	s = strings.ReplaceAll(s, "\"", "\\\"")
+	s = strings.ReplaceAll(s, "\n", "\\n")
+	s = strings.ReplaceAll(s, "\r", "\\r")
+	s = strings.ReplaceAll(s, "\t", "\\t")
+	return s
+}
+
 // HandleStreamingRequest 统一流式请求处理
 // 使用V2架构整合错误恢复机制和生命周期管理的流式处理
 func (sh *StreamingHandler) HandleStreamingRequest(ctx context.Context, w http.ResponseWriter, r *http.Request, bodyBytes []byte, lifecycleManager RequestLifecycleManager) {
@@ -309,10 +341,15 @@ func (sh *StreamingHandler) executeStreamingWithRetry(ctx context.Context, w htt
 					// 根据状态决定是否发送错误信息
 					if status == "cancelled" {
 						fmt.Fprintf(w, "data: cancelled: 客户端取消请求\n\n")
+						flusher.Flush()
+					} else if isStreamingEOFError(err) && sh.config.RequestSuspend.EOFRetryHint {
+						// 🔄 [EOF重试提示] 流式传输过程中 EOF：发送 Anthropic API 标准格式让客户端重试
+						slog.Info(fmt.Sprintf("🔄 [EOF重试提示] [%s] 流式传输中断，发送可重试错误格式", connID))
+						sendAnthropicRetryableError(w, flusher, "Stream interrupted (EOF), please retry")
 					} else {
 						fmt.Fprintf(w, "data: error: 流式处理失败: %v\n\n", err)
+						flusher.Flush()
 					}
-					flusher.Flush()
 					return
 				}
 

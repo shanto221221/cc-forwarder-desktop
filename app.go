@@ -960,6 +960,7 @@ func (a *App) applySettingsToConfig() {
 	a.config.RequestSuspend.Enabled = a.settingsService.GetBool(ctx, service.CategoryRequest, "suspend_enabled", a.config.RequestSuspend.Enabled)
 	a.config.RequestSuspend.Timeout = a.settingsService.GetDuration(ctx, service.CategoryRequest, "suspend_timeout", a.config.RequestSuspend.Timeout)
 	a.config.RequestSuspend.MaxSuspendedRequests = a.settingsService.GetInt(ctx, service.CategoryRequest, "max_suspended", a.config.RequestSuspend.MaxSuspendedRequests)
+	a.config.RequestSuspend.EOFRetryHint = a.settingsService.GetBool(ctx, service.CategoryRequest, "eof_retry_hint", a.config.RequestSuspend.EOFRetryHint)
 
 	// 流式传输配置
 	a.config.Streaming.HeartbeatInterval = a.settingsService.GetDuration(ctx, service.CategoryStreaming, "heartbeat_interval", a.config.Streaming.HeartbeatInterval)
