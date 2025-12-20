@@ -5,6 +5,18 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 项目遵循 [语义化版本控制](https://semver.org/lang/zh-CN/)。
 
+## [5.2.3] - 2025-12-20
+
+### 🐛 Bug 修复 (Bug Fixes)
+
+- **EOF 重试机制修复**: 修复 LoggingMiddleware 导致 Flusher 接口断言失败的问题
+  - `responseWriter` 包装器未实现 `http.Flusher` 接口，导致流式处理退化为 `noOpFlusher`
+  - EOF 发生时 `sendStreamInterruptedMessage` 发送的重试信号无法推送到客户端
+  - 新增 `Flush()` 方法正确转发到底层 ResponseWriter
+  - 新增 `Unwrap()` 方法支持 Go 1.20+ `http.ResponseController` 解包
+
+---
+
 ## [5.2.2] - 2025-12-20
 
 ### 🐛 Bug 修复 (Bug Fixes)
