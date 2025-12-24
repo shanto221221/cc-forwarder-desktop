@@ -1,6 +1,6 @@
 // ============================================
 // Endpoints 页面 - 端点管理
-// 2025-11-28 (Updated 2025-12-17 for channel grouping)
+// 2025-11-28 (Updated 2025-12-24 for card layout)
 // ============================================
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
@@ -8,8 +8,7 @@ import {
   Activity,
   RefreshCw,
   Database,
-  Server,
-  ChevronsUpDown
+  Server
 } from 'lucide-react';
 import {
   Button,
@@ -19,8 +18,7 @@ import {
 import useEndpointsData from '@hooks/useEndpointsData.js';
 import {
   EndpointForm,
-  EndpointRow,
-  ChannelRow,
+  ChannelCard,
   DeleteConfirmDialog,
   groupEndpointsByChannel
 } from './components';
@@ -68,9 +66,6 @@ const EndpointsPage = () => {
   // 删除确认状态
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
-
-  // 渠道折叠状态
-  const [expandedChannels, setExpandedChannels] = useState(new Set());
 
   // 加载存储状态
   const loadStorageStatus = useCallback(async () => {
@@ -159,45 +154,6 @@ const EndpointsPage = () => {
 
   // 按渠道分组
   const groupedEndpoints = groupEndpointsByChannel(displayEndpoints);
-
-  // 切换渠道展开状态
-  const toggleChannel = (channel) => {
-    setExpandedChannels(prev => {
-      const next = new Set(prev);
-      if (next.has(channel)) {
-        next.delete(channel);
-      } else {
-        next.add(channel);
-      }
-      return next;
-    });
-  };
-
-  // 全部展开/折叠
-  const toggleAllChannels = () => {
-    const allChannels = new Set(displayEndpoints.map(e => e.channel || e.group || '未分组'));
-    if (expandedChannels.size === allChannels.size) {
-      // 当前全部展开，则全部折叠
-      setExpandedChannels(new Set());
-    } else {
-      // 否则全部展开
-      setExpandedChannels(allChannels);
-    }
-  };
-
-  // 判断是否全部展开
-  const isAllExpanded = () => {
-    const allChannels = new Set(displayEndpoints.map(e => e.channel || e.group || '未分组'));
-    return expandedChannels.size === allChannels.size;
-  };
-
-  // 首次加载时默认展开所有渠道
-  useEffect(() => {
-    if (displayEndpoints.length > 0 && expandedChannels.size === 0) {
-      const channels = new Set(displayEndpoints.map(e => e.channel || e.group || '未分组'));
-      setExpandedChannels(channels);
-    }
-  }, [displayEndpoints]);
 
   // ============================================
   // CRUD 操作处理
@@ -387,95 +343,47 @@ const EndpointsPage = () => {
         </div>
       </div>
 
-      {/* 端点表格 */}
-      <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden">
-        {/* 表格工具栏 */}
-        <div className="px-6 py-3 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-          <div className="text-sm text-slate-600 font-medium">
-            {groupedEndpoints.length} 个渠道
+      {/* 渠道卡片网格 - 2 列布局 */}
+      {displayEndpoints.length === 0 ? (
+        <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm p-12 text-center">
+          <div className="flex flex-col items-center gap-3">
+            <Database size={40} className="text-slate-300" />
+            <p className="text-slate-500">暂无端点配置</p>
+            {isSqliteMode && (
+              <Button icon={Server} onClick={handleCreate}>
+                添加第一个端点
+              </Button>
+            )}
           </div>
-          <button
-            onClick={toggleAllChannels}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"
-          >
-            <ChevronsUpDown size={14} />
-            {isAllExpanded() ? '全部折叠' : '全部展开'}
-          </button>
         </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+            {groupedEndpoints.map(({ channel, endpoints: channelEndpoints }) => (
+              <ChannelCard
+                key={channel}
+                channel={channel}
+                endpoints={channelEndpoints}
+                storageMode={isSqliteMode ? 'sqlite' : 'yaml'}
+                onActivateGroup={activateEndpointGroup}
+                onEdit={handleEdit}
+                onDelete={handleDelete}
+                onToggle={handleToggle}
+              />
+            ))}
+          </div>
 
-        <div className="overflow-x-auto min-h-[400px]">
-          <table className="w-full text-left text-sm whitespace-nowrap">
-            <thead className="bg-slate-50/80 text-xs uppercase font-semibold text-slate-500 border-b border-slate-100">
-              <tr>
-                <th className="px-6 py-4 w-24">启用</th>
-                <th className="px-6 py-4">渠道 / 名称</th>
-                <th className="px-6 py-4">URL / 认证</th>
-                <th className="px-6 py-4 text-center">优先级</th>
-                <th className="px-6 py-4">高级特性</th>
-                <th className="px-6 py-4 text-center">延迟</th>
-                <th className="px-6 py-4 text-center">倍率</th>
-                <th className="px-6 py-4">最后检查</th>
-                <th className="px-6 py-4 text-right">操作</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {displayEndpoints.length === 0 ? (
-                <tr>
-                  <td colSpan={9} className="px-6 py-12 text-center text-slate-500">
-                    {isSqliteMode ? (
-                      <div className="flex flex-col items-center gap-3">
-                        <Database size={40} className="text-slate-300" />
-                        <p>暂无端点配置</p>
-                        <Button icon={Server} onClick={handleCreate}>
-                          添加第一个端点
-                        </Button>
-                      </div>
-                    ) : (
-                      '暂无端点数据'
-                    )}
-                  </td>
-                </tr>
-              ) : (
-                groupedEndpoints.map(({ channel, endpoints: channelEndpoints }) => (
-                  <React.Fragment key={channel}>
-                    <ChannelRow
-                      channel={channel}
-                      endpoints={channelEndpoints}
-                      expanded={expandedChannels.has(channel)}
-                      onToggle={() => toggleChannel(channel)}
-                      storageMode={isSqliteMode ? 'sqlite' : 'yaml'}
-                    />
-                    {expandedChannels.has(channel) && channelEndpoints.map((endpoint, index) => (
-                      <EndpointRow
-                        key={endpoint.name || index}
-                        endpoint={endpoint}
-                        storageMode={isSqliteMode ? 'sqlite' : 'yaml'}
-                        onActivateGroup={activateEndpointGroup}
-                        onEdit={handleEdit}
-                        onDelete={handleDelete}
-                        onToggle={handleToggle}
-                        isGrouped={true}
-                      />
-                    ))}
-                  </React.Fragment>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* 分页 */}
-        <div className="px-6 py-4 border-t border-slate-100 flex justify-between items-center">
-          <div className="text-xs text-slate-500">
-            显示 {groupedEndpoints.length} 个渠道，共 {displayEndpoints.length} 个端点
+          {/* 底部统计 */}
+          <div className="text-xs text-slate-500 text-center py-2">
+            共 {groupedEndpoints.length} 个渠道，{displayEndpoints.length} 个端点
             {displayStats.healthPercentage > 0 && (
-              <span className="ml-2 text-emerald-600">
+              <span className="ml-2 text-indigo-600">
                 · {displayStats.healthPercentage}% 健康率
               </span>
             )}
           </div>
-        </div>
-      </div>
+        </>
+      )}
 
       {/* 端点表单弹窗 */}
       {showForm && (
