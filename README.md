@@ -110,8 +110,8 @@ wails build
 启动应用后，在 Claude Code 中设置代理地址：
 
 ```bash
-# 设置 API 代理地址（默认端口 9090）
-claude config set --global apiBaseUrl http://127.0.0.1:9090
+# 设置 API 代理地址（默认端口 8080）
+claude config set --global apiBaseUrl http://127.0.0.1:8080
 ```
 
 ## 配置说明
@@ -216,7 +216,7 @@ usage_tracking:
 <details>
 <summary><b>Q: 代理启动后 Claude Code 连接失败？</b></summary>
 
-1. 确认代理端口（默认 9090）没有被占用
+1. 确认代理端口（默认 8080）没有被占用
 2. 检查 Claude Code 的 `apiBaseUrl` 配置是否正确
 3. 确认至少配置了一个可用端点
 
